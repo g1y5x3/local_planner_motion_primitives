@@ -3,7 +3,7 @@ from scipy.spatial import cKDTree
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 
-# Parameters
+# Parameters for path generation
 dis = 1.0
 angle = 27
 delta_angle = angle / 3
@@ -66,17 +66,17 @@ plt.ylabel('Y (m)')
 plt.show()
 
 print("Path Lists")
-print(path_list)
-
+print(*path_list, sep='\n')
 print("Path generation complete.")
 
-# Parameters
-voxel_size = 0.02
+# Parameters for patch matching and blocking
+# these parameters should be the same as the local_planner node 
+voxel_size = 0.05
 search_radius = 0.45
 offset_x = 3.2
 offset_y = 4.5
-voxel_num_x = 161
-voxel_num_y = 451
+voxel_num_x = 65
+voxel_num_y = 91
 
 # Prepare voxels
 print("\nPreparing voxels\n")
@@ -86,19 +86,28 @@ for ind_x in range(voxel_num_x):
     scale_y = x / offset_x + search_radius / offset_y * (offset_x - x) / offset_x
     for ind_y in range(voxel_num_y):
         y = scale_y * (offset_y - voxel_size * ind_y)
-        voxel_points.append([x, y])
+        voxel_points.append([x, y, 0])
 
 voxel_points = np.array(voxel_points)
 
-# Collision checking
-print("\nCollision checking\n")
-path_points = np.vstack([path[:, :2] for path in path_all])
+# Plot paths
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+# for path in path_all:
+ax.plot(voxel_points[:, 0], voxel_points[:, 1], voxel_points[:, 2])
+plt.xlabel('X (m)')
+plt.ylabel('Y (m)')
+plt.show()
 
-print(f"path_points {path_points}")
-print(f"voxel_points {voxel_points}")
+# # Collision checking
+# print("\nCollision checking\n")
+# path_points = np.vstack([path[:, :2] for path in path_all])
 
-kdtree = cKDTree(path_points)
-indices = kdtree.query_ball_point(voxel_points, search_radius)
+# print(f"path_points {path_points}")
+# print(f"voxel_points {voxel_points}")
+
+# kdtree = cKDTree(path_points)
+# indices = kdtree.query_ball_point(voxel_points, search_radius)
 
 # # Save correspondences
 # print("\nSaving correspondences\n")
