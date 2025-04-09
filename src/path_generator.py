@@ -75,8 +75,8 @@ voxel_size = 0.05
 search_radius = 0.45
 offset_x = 3.2
 offset_y = 4.5
-voxel_num_x = 65
-voxel_num_y = 91
+voxel_num_x = int((offset_x / voxel_size) + 1)
+voxel_num_y = int(2 * (offset_y / voxel_size) + 1)
 
 # Prepare voxels
 print("\nPreparing voxels\n")
