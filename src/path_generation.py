@@ -111,7 +111,7 @@ voxel_points = np.array(voxel_points)
 fig = plt.figure(figsize=(10, 12))
 ax = fig.add_subplot(111)
 ax.plot(voxel_points[:, 0], voxel_points[:, 1], marker='x', color='blue', linestyle='none')
-ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels')
+ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\nvoxel x num {voxel_num_x}\nvoxel y num {voxel_num_y}')
 ax.set_xlim([-0.2, 3.5])
 ax.set_ylim([-4.5, 4.5])
 plt.xlabel('X (m)')
@@ -153,7 +153,7 @@ np.savetxt('pregen_path_list.txt', array, fmt="%f %f %f %d %d", delimiter='')
 
 # Each row starting with an index represents a voxel, the following indices are the generated paths
 # that pass through the voxel
-with open('pregen_voxel_path_indices.txt', 'w') as f:
+with open('pregen_voxel_path_corr.txt', 'w') as f:
     array = np.vstack(path_all)
     for idx, sublist in enumerate(indices):
         f.write(f"{idx} ")
