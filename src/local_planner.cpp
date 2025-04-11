@@ -57,7 +57,6 @@ class LocalPlanner : public rclcpp::Node
           RCLCPP_INFO(this->get_logger(), "Error reading voxel, exit.");
           exit(1);
         }
-        // std::cout << voxel_id;
 
         while (1) {
           status = fscanf(file_ptr, "%d", &path_id);
@@ -65,7 +64,6 @@ class LocalPlanner : public rclcpp::Node
             RCLCPP_INFO(this->get_logger(), "Error reading voxel, exit.");
             exit(1);
           }
-          // std::cout << " " << path_id;         
 
           if (path_id != -1) {
             voxel_path_corr[voxel_id].push_back(path_id);
@@ -74,8 +72,14 @@ class LocalPlanner : public rclcpp::Node
             break;
           }
         }
-        // std::cout << std::endl;
       }
+
+      //for (int i = 0; i < voxel_path_corr.size(); i++) {
+      //  for (int j = 0; j < voxel_path_corr[i].size(); j++) {
+      //    std::cout << voxel_path_corr[i][j] << " ";
+      //  }
+      //  std::cout << std::endl;
+      //}
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded voxel path correspondence!");
       fclose(file_ptr);
