@@ -1,4 +1,6 @@
 #include <memory>
+#include <vector>
+#include <iostream>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
@@ -15,6 +17,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/laserscan", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
+      voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
     }
 
@@ -32,7 +35,7 @@ class LocalPlanner : public rclcpp::Node
     const int voxel_num_y = 181;
     static const int voxel_num = 8350;
 
-    std::vector<int> voxel_path_corr[voxel_num];
+    std::vector<std::vector<int>> voxel_path_corr;
 
     // publishers and subscribers
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
@@ -47,7 +50,35 @@ class LocalPlanner : public rclcpp::Node
         exit(1);
       }
 
+      int status, voxel_id, path_id;
+      for (int i = 0; i < voxel_num; i++) {
+        status = fscanf(file_ptr, "%d", &voxel_id);
+        if (status != 1) {
+          RCLCPP_INFO(this->get_logger(), "Error reading voxel, exit.");
+          exit(1);
+        }
+        // std::cout << voxel_id;
+
+        while (1) {
+          status = fscanf(file_ptr, "%d", &path_id);
+          if (status != 1) {
+            RCLCPP_INFO(this->get_logger(), "Error reading voxel, exit.");
+            exit(1);
+          }
+          // std::cout << " " << path_id;         
+
+          if (path_id != -1) {
+            voxel_path_corr[voxel_id].push_back(path_id);
+          }
+          else {
+            break;
+          }
+        }
+        // std::cout << std::endl;
+      }
+
       RCLCPP_INFO(this->get_logger(), "Successfully loaded voxel path correspondence!");
+      fclose(file_ptr);
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2 msg)
