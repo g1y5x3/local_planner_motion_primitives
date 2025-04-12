@@ -12,7 +12,8 @@ class LocalPlanner : public rclcpp::Node
   public:
     LocalPlanner() 
     : Node("local_planner"),
-      lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>())
+      lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
+      lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>())
     {
       //ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
@@ -23,7 +24,7 @@ class LocalPlanner : public rclcpp::Node
 
       // publisher and subscriber
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/laserscan", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
+        "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
       // read pre generated paths
       voxel_path_corr.resize(voxel_num);
@@ -42,10 +43,15 @@ class LocalPlanner : public rclcpp::Node
     const float offset_y = 4.5;
     const int voxel_num_x = 65;
     const int voxel_num_y = 181;
-    static const int voxel_num = 8350;
+    const int voxel_num = 8350;
+
+    // Parameters for planner
+    const double threshold_adjacent = 3.5;
+    const double threshold_height = 0.2;
 
     // point clouds 
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
 
     // publishers and subscribers
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
@@ -66,6 +72,20 @@ class LocalPlanner : public rclcpp::Node
         return;
       }
       pcl::fromROSMsg(*msg_base, *lidar_cloud_);
+
+      // apply filtering
+      lidar_cloud_crop_->clear();
+      pcl::PointXYZI point;
+      int num_points = lidar_cloud_->points.size();
+
+      for (int i = 0; i < num_points; i++) {
+        point = lidar_cloud_->points[i];
+        float distance = sqrt((point.x * point.x) + (point.y * point.y));
+
+        if (distance < threshold_adjacent) {
+          lidar_cloud_crop_->push_back(point);
+        }
+      } 
 
     }
 
