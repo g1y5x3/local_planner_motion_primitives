@@ -6,6 +6,7 @@
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
+#include "pcl/filters/voxel_grid.h"
 
 class LocalPlanner : public rclcpp::Node
 {
@@ -13,10 +14,14 @@ class LocalPlanner : public rclcpp::Node
     LocalPlanner() 
     : Node("local_planner"),
       lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
-      lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>())
+      lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
+      lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>())
     {
-      //ROS parameters
+      //Declare and load ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
+      this->declare_parameter<double>("lidar_voxel_size", 0.05);
+
+      this->get_parameter("lidar_voxel_size", lidar_voxel_size);
 
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -29,6 +34,9 @@ class LocalPlanner : public rclcpp::Node
       // read pre generated paths
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
+
+      // other initializations
+      filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
     }
 
   private:
@@ -48,10 +56,13 @@ class LocalPlanner : public rclcpp::Node
     // Parameters for planner
     const double threshold_adjacent = 3.5;
     const double threshold_height = 0.2;
+    double lidar_voxel_size;
 
     // point clouds 
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
+    pcl::VoxelGrid<pcl::PointXYZI> filter_DWZ;
 
     // publishers and subscribers
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
@@ -77,6 +88,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_crop_->clear();
       pcl::PointXYZI point;
       int num_points = lidar_cloud_->points.size();
+      RCLCPP_INFO(this->get_logger(), "original %d", num_points); 
 
       for (int i = 0; i < num_points; i++) {
         point = lidar_cloud_->points[i];
@@ -85,8 +97,13 @@ class LocalPlanner : public rclcpp::Node
         if (distance < threshold_adjacent) {
           lidar_cloud_crop_->push_back(point);
         }
-      } 
+      }
+      RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size()); 
 
+      lidar_cloud_dwz_->clear();
+      filter_DWZ.setInputCloud(lidar_cloud_crop_);
+      filter_DWZ.filter(*lidar_cloud_dwz_);
+      RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size()); 
     }
 
     void read_voxel_path_correspondence()
