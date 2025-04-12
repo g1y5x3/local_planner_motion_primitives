@@ -3,8 +3,9 @@
 #include "tf2_sensor_msgs/tf2_sensor_msgs.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
+#include "pcl_conversions/pcl_conversions.h"
+#include "pcl/point_cloud.h"
+#include "pcl/point_types.h"
 
 class LocalPlanner : public rclcpp::Node
 {
@@ -53,17 +54,19 @@ class LocalPlanner : public rclcpp::Node
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
     {
+      // transfrom from lidar frame to base_link frame and convert to PCL
       sensor_msgs::msg::PointCloud2::SharedPtr msg_base = std::make_shared<sensor_msgs::msg::PointCloud2>();
       try {
         msg_base->header.frame_id = "base_link";
         tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
-        RCLCPP_INFO(this->get_logger(), 
-                    "Received cloud under frame '%s' and converted to frame '%s'.", 
+        RCLCPP_INFO(this->get_logger(), "Received cloud under frame '%s' and converted to frame '%s'.", 
                     msg->header.frame_id.c_str(), msg_base->header.frame_id.c_str());
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
         return;
       }
+      pcl::fromROSMsg(*msg_base, *lidar_cloud_);
+
     }
 
     void read_voxel_path_correspondence()
