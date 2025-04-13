@@ -37,14 +37,20 @@ class LocalPlanner : public rclcpp::Node
 
       // other initializations
       filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
+
+      // planner main loop
     }
 
   private:
-    // Parameters from pregenerated paths (TODO: Load from a file maybe)
+    double lidar_voxel_size;  // lidar point cloud filter
+
+    // pregenerated paths (TODO: Load from a file maybe)
     std::string pregen_path_dir;
     std::vector<std::vector<int>> voxel_path_corr;
     const int num_path = 343;
     const int num_group = 7;
+
+    // voxel space
     const float voxel_size = 0.05;
     const float search_radius = 0.45;
     const float offset_x = 3.2;
@@ -53,10 +59,9 @@ class LocalPlanner : public rclcpp::Node
     const int voxel_num_y = 181;
     const int voxel_num = 8350;
 
-    // Parameters for planner
+    // planner search parameters
     const double threshold_adjacent = 3.5;
     const double threshold_height = 0.2;
-    double lidar_voxel_size;
 
     // point clouds 
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
@@ -88,7 +93,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_crop_->clear();
       pcl::PointXYZI point;
       int num_points = lidar_cloud_->points.size();
-      RCLCPP_INFO(this->get_logger(), "original %d", num_points); 
+      // RCLCPP_INFO(this->get_logger(), "original %d", num_points); 
 
       for (int i = 0; i < num_points; i++) {
         point = lidar_cloud_->points[i];
@@ -98,12 +103,12 @@ class LocalPlanner : public rclcpp::Node
           lidar_cloud_crop_->push_back(point);
         }
       }
-      RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size()); 
+      // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size()); 
 
       lidar_cloud_dwz_->clear();
       filter_DWZ.setInputCloud(lidar_cloud_crop_);
       filter_DWZ.filter(*lidar_cloud_dwz_);
-      RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size()); 
+      // RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size()); 
     }
 
     void read_voxel_path_correspondence()
