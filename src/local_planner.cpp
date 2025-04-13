@@ -23,6 +23,13 @@ class LocalPlanner : public rclcpp::Node
 
       this->get_parameter("lidar_voxel_size", lidar_voxel_size);
 
+      // read pre generated paths
+      voxel_path_corr.resize(voxel_num);
+      this->read_voxel_path_correspondence();
+
+      // other initializations
+      filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
+
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -31,14 +38,8 @@ class LocalPlanner : public rclcpp::Node
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
-      // read pre generated paths
-      voxel_path_corr.resize(voxel_num);
-      this->read_voxel_path_correspondence();
-
-      // other initializations
-      filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
-
-      // planner main loop
+      // planner
+      planner_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind());
     }
 
   private:
@@ -156,6 +157,11 @@ class LocalPlanner : public rclcpp::Node
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded voxel path correspondence!");
       fclose(file_ptr);
+    }
+
+    void planner_() 
+    {
+
     }
 };
 
