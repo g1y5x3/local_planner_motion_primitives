@@ -11,7 +11,7 @@
 class LocalPlanner : public rclcpp::Node
 {
   public:
-    LocalPlanner() 
+    LocalPlanner()
     : Node("local_planner"),
       lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
@@ -27,7 +27,7 @@ class LocalPlanner : public rclcpp::Node
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
 
-      // other initializations
+      // pcl filters initializations
       filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
 
       // tf listener
@@ -39,7 +39,7 @@ class LocalPlanner : public rclcpp::Node
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
       // planner
-      planner_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind());
+      planner_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_main, this));
     }
 
   private:
@@ -64,7 +64,7 @@ class LocalPlanner : public rclcpp::Node
     const double threshold_adjacent = 3.5;
     const double threshold_height = 0.2;
 
-    // point clouds 
+    // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
@@ -72,8 +72,9 @@ class LocalPlanner : public rclcpp::Node
 
     // publishers and subscribers
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+    rclcpp::TimerBase::SharedPtr planner_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
     {
@@ -82,7 +83,7 @@ class LocalPlanner : public rclcpp::Node
       try {
         msg_base->header.frame_id = "base_link";
         tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
-        RCLCPP_INFO(this->get_logger(), "Received cloud under frame '%s' and converted to frame '%s'.", 
+        RCLCPP_INFO(this->get_logger(), "Received cloud under frame '%s' and converted to frame '%s'.",
                     msg->header.frame_id.c_str(), msg_base->header.frame_id.c_str());
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
@@ -94,7 +95,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_crop_->clear();
       pcl::PointXYZI point;
       int num_points = lidar_cloud_->points.size();
-      // RCLCPP_INFO(this->get_logger(), "original %d", num_points); 
+      // RCLCPP_INFO(this->get_logger(), "original %d", num_points);
 
       for (int i = 0; i < num_points; i++) {
         point = lidar_cloud_->points[i];
@@ -104,12 +105,12 @@ class LocalPlanner : public rclcpp::Node
           lidar_cloud_crop_->push_back(point);
         }
       }
-      // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size()); 
+      // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size());
 
       lidar_cloud_dwz_->clear();
       filter_DWZ.setInputCloud(lidar_cloud_crop_);
       filter_DWZ.filter(*lidar_cloud_dwz_);
-      // RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size()); 
+      // RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size());
     }
 
     void read_voxel_path_correspondence()
@@ -117,7 +118,7 @@ class LocalPlanner : public rclcpp::Node
       this->get_parameter("pregen_path_dir", pregen_path_dir);
       std::string filename = pregen_path_dir + "/pregen_voxel_path_corr.txt";
 
-      FILE *file_ptr = fopen(filename.c_str(), "r"); 
+      FILE *file_ptr = fopen(filename.c_str(), "r");
       if (file_ptr == NULL) {
         RCLCPP_INFO(this->get_logger(), "Cannot read voxel path correspondence file, exit.");
         exit(1);
@@ -159,9 +160,10 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
-    void planner_() 
+    void local_planner_main()
     {
-
+      rclcpp::Time current_time = this->get_clock()->now();
+      RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
     }
 };
 
