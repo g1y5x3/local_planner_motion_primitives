@@ -1,6 +1,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "tf2_sensor_msgs/tf2_sensor_msgs.hpp"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 #include "pcl_conversions/pcl_conversions.h"
@@ -28,17 +31,20 @@ class LocalPlanner : public rclcpp::Node
       this->read_voxel_path_correspondence();
 
       // pcl filters initializations
-      filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
+      lidar_filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
 
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // publisher and subscriber
+      // odom_subcription_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      //   "/odom", 5, std::bind(&LocalPlanner::odom_callback, this, std::placeholders::_1));
+      pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
-      // planner
       planner_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_main, this));
     }
 
@@ -65,16 +71,27 @@ class LocalPlanner : public rclcpp::Node
     const double threshold_height = 0.2;
 
     // point clouds
+    pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
+
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
-    pcl::VoxelGrid<pcl::PointXYZI> filter_DWZ;
+    pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
 
     // publishers and subscribers
+    // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
     rclcpp::TimerBase::SharedPtr planner_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+
+
+    // extract only the position from odometry and convert it from /odom frame to /map frame
+    void pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
+    {
+      RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s'.", msg->header.frame_id.c_str());
+    }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
     {
@@ -108,8 +125,8 @@ class LocalPlanner : public rclcpp::Node
       // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size());
 
       lidar_cloud_dwz_->clear();
-      filter_DWZ.setInputCloud(lidar_cloud_crop_);
-      filter_DWZ.filter(*lidar_cloud_dwz_);
+      lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
+      lidar_filter_DWZ.filter(*lidar_cloud_dwz_);
       // RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size());
     }
 
