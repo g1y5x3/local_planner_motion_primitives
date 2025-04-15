@@ -1,15 +1,18 @@
 #include "rclcpp/rclcpp.hpp"
+
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include "tf2_sensor_msgs/tf2_sensor_msgs.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2_ros/transform_listener.h"
-#include "tf2_ros/buffer.h"
-#include "pcl_conversions/pcl_conversions.h"
+
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
 #include "pcl/filters/voxel_grid.h"
+#include "pcl_conversions/pcl_conversions.h"
 
 class LocalPlanner : public rclcpp::Node
 {
@@ -18,7 +21,8 @@ class LocalPlanner : public rclcpp::Node
     : Node("local_planner"),
       lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
-      lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>())
+      lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
+      pose_map_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
       //Declare and load ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
@@ -38,8 +42,6 @@ class LocalPlanner : public rclcpp::Node
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // publisher and subscriber
-      // odom_subcription_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      //   "/odom", 5, std::bind(&LocalPlanner::odom_callback, this, std::placeholders::_1));
       pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -78,6 +80,8 @@ class LocalPlanner : public rclcpp::Node
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
 
+    geometry_msgs::msg::PoseStamped::SharedPtr pose_map_;    // robot pose under the map frame
+
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
@@ -90,12 +94,22 @@ class LocalPlanner : public rclcpp::Node
     // extract only the position from odometry and convert it from /odom frame to /map frame
     void pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
+      // transfrom pose from /odom frame to /map frame
       RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s'.", msg->header.frame_id.c_str());
+      try {
+        pose_map_->header.frame_id = "map";
+        tf_buffer_->transform(*msg, *pose_map_, "map", tf2::durationFromSec(0.1));
+        RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s' and converted to frame '%s'.",
+                    msg->header.frame_id.c_str(), pose_map_->header.frame_id.c_str());
+      } catch (tf2::TransformException &ex) {
+        RCLCPP_WARN(get_logger(), "%s", ex.what());
+        return;
+      }
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
     {
-      // transfrom from lidar frame to base_link frame and convert to PCL
+      // transfrom point cloud from /lidar frame to /base_link frame and convert to PCL format
       sensor_msgs::msg::PointCloud2::SharedPtr msg_base = std::make_shared<sensor_msgs::msg::PointCloud2>();
       try {
         msg_base->header.frame_id = "base_link";
@@ -179,8 +193,8 @@ class LocalPlanner : public rclcpp::Node
 
     void local_planner_main()
     {
-      rclcpp::Time current_time = this->get_clock()->now();
-      RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
+      // rclcpp::Time current_time = this->get_clock()->now();
+      // RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
     }
 };
 
