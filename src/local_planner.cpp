@@ -22,7 +22,8 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
-      pose_map_(std::make_shared<geometry_msgs::msg::PoseStamped>())
+      p_robot_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
+      p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
       //Declare and load ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
@@ -42,6 +43,17 @@ class LocalPlanner : public rclcpp::Node
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // publisher and subscriber
+      // TODO: replaced with a proper goal pose subscriber
+      p_goal_base_->header.stamp = this->get_clock()->now();
+      p_goal_base_->header.frame_id = "base_link";
+      p_goal_base_->pose.position.x = 1.0;
+      p_goal_base_->pose.position.y = 0.0;
+      p_goal_base_->pose.position.z = 0.0;
+      p_goal_base_->pose.orientation.x = 0.0;
+      p_goal_base_->pose.orientation.y = 0.0;
+      p_goal_base_->pose.orientation.z = 0.0;
+      p_goal_base_->pose.orientation.w = 1.0;
+
       pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -80,7 +92,10 @@ class LocalPlanner : public rclcpp::Node
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
 
-    geometry_msgs::msg::PoseStamped::SharedPtr pose_map_;    // robot pose under the map frame
+    // poses to be tracked
+    geometry_msgs::msg::PoseStamped::SharedPtr p_robot_map_;  // robot pose under the map frame
+    geometry_msgs::msg::PoseStamped::SharedPtr p_goal_map_;   // goal pose under the map frame
+    geometry_msgs::msg::PoseStamped::SharedPtr p_goal_base_;  // goal pose under the base_link frame
 
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
@@ -97,10 +112,10 @@ class LocalPlanner : public rclcpp::Node
       // transfrom pose from /odom frame to /map frame
       RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s'.", msg->header.frame_id.c_str());
       try {
-        pose_map_->header.frame_id = "map";
-        tf_buffer_->transform(*msg, *pose_map_, "map", tf2::durationFromSec(0.1));
+        p_robot_map_->header.frame_id = "map";
+        tf_buffer_->transform(*msg, *p_robot_map_, "map", tf2::durationFromSec(0.1));
         RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s' and converted to frame '%s'.",
-                    msg->header.frame_id.c_str(), pose_map_->header.frame_id.c_str());
+                    msg->header.frame_id.c_str(), p_robot_map_->header.frame_id.c_str());
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
         return;
