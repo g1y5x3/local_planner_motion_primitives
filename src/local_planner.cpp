@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "rclcpp/rclcpp.hpp"
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -43,7 +45,9 @@ class LocalPlanner : public rclcpp::Node
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // publisher and subscriber
-      // TODO: replaced with a proper goal pose subscriber
+
+      // TODO: replaced with a goal pose subscriber under the /map frame and
+      // then convert it to be under /base_link frame
       p_goal_base_->header.stamp = this->get_clock()->now();
       p_goal_base_->header.frame_id = "base_link";
       p_goal_base_->pose.position.x = 1.0;
@@ -71,7 +75,7 @@ class LocalPlanner : public rclcpp::Node
     const int num_path = 343;
     const int num_group = 7;
 
-    // voxel space
+    // path and voxel parameters
     const float voxel_size = 0.05;
     const float search_radius = 0.45;
     const float offset_x = 3.2;
@@ -79,10 +83,20 @@ class LocalPlanner : public rclcpp::Node
     const int voxel_num_x = 65;
     const int voxel_num_y = 181;
     const int voxel_num = 8350;
+    const int path_num = 343;
+    const int path_group_num = 7
 
-    // planner search parameters
+    // planner parameters
     const double threshold_adjacent = 3.5;
     const double threshold_height = 0.2;
+
+    // planner other variables
+    float goal_distance;
+    float goal_angle;
+
+    // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
+    int clear_pathlist[36 * path_num] = {0};
+    int penalty_pathlist[36 * path_num] = {0};
 
     // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
@@ -210,6 +224,20 @@ class LocalPlanner : public rclcpp::Node
     {
       // rclcpp::Time current_time = this->get_clock()->now();
       // RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
+      float p_relative_x = p_goal_base_->pose.position.x;
+      float p_relative_y = p_goal_base_->pose.position.y;
+      goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
+      goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
+      RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
+
+      //clear search info
+      for (int i = 0; i < 36 * path_num; i++) {
+        clear_pathlist[i] = 0;
+        penalty_pathlist[i] = 0;
+      }
+
+      // criteria to select the group ID for paths
+
     }
 };
 
