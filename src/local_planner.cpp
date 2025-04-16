@@ -63,7 +63,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
-      planner_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_main, this));
+      planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
     }
 
   private:
@@ -115,7 +115,7 @@ class LocalPlanner : public rclcpp::Node
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
-    rclcpp::TimerBase::SharedPtr planner_;
+    rclcpp::TimerBase::SharedPtr planner_loop_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
 
@@ -220,7 +220,7 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
-    void local_planner_main()
+    void local_planner_callback()
     {
       // rclcpp::Time current_time = this->get_clock()->now();
       // RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
