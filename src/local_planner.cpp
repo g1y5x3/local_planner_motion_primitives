@@ -83,8 +83,8 @@ class LocalPlanner : public rclcpp::Node
     const int voxel_num_x = 65;
     const int voxel_num_y = 181;
     const int voxel_num = 8350;
-    const int path_num = 343;
-    const int path_group_num = 7
+    const int path_group_num = 7;
+    static const int path_num = 343;
 
     // planner parameters
     const double threshold_adjacent = 3.5;
