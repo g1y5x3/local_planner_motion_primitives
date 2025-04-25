@@ -5,6 +5,7 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
@@ -209,15 +210,16 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
-      //for (int i = 0; i < voxel_path_corr.size(); i++) {
-      //  for (int j = 0; j < voxel_path_corr[i].size(); j++) {
-      //    std::cout << voxel_path_corr[i][j] << " ";
-      //  }
-      //  std::cout << std::endl;
-      //}
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded voxel path correspondence!");
       fclose(file_ptr);
+    }
+
+    void read_path()
+    {
+      this->get_parameter("pregen_path_dir", pregen_path_dir);
+      std::string filename = pregen_path_dir + "/pregen_path_all.txt";
+
     }
 
     void local_planner_callback()
