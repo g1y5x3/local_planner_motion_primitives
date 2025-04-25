@@ -37,6 +37,7 @@ class LocalPlanner : public rclcpp::Node
       // read pre generated paths
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
+      this->read_path();
 
       // pcl filters initializations
       lidar_filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
@@ -86,6 +87,9 @@ class LocalPlanner : public rclcpp::Node
     const int voxel_num = 8350;
     const int path_group_num = 7;
     static const int path_num = 343;
+    static const int path_points_num = 103243;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr paths[path_num];
+    std::vector<int> path_id, path_group_id;
 
     // planner parameters
     const double threshold_adjacent = 3.5;
@@ -215,11 +219,26 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
+    // For visualization only 
     void read_path()
     {
       this->get_parameter("pregen_path_dir", pregen_path_dir);
       std::string filename = pregen_path_dir + "/pregen_path_all.txt";
 
+      FILE *file_ptr = fopen(filename.c_str(), "r");
+      if (file_ptr == NULL) {
+        RCLCPP_INFO(this->get_logger(), "Cannot read path file, exit.");
+        exit(1);
+      }
+
+      pcl::PointXYZI point;
+      int status_x, status_y, status_z, status_path_id, status_path_group_id;
+      // for (int i = 0; i < path_points_num; i += 30) {
+      //   fscanf  
+      // }
+
+      RCLCPP_INFO(this->get_logger(), "Successfully loaded paths!");
+      fclose(file_ptr);
     }
 
     void local_planner_callback()
@@ -230,7 +249,7 @@ class LocalPlanner : public rclcpp::Node
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
-      RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
+      // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
       //clear search info
       for (int i = 0; i < 36 * path_num; i++) {
