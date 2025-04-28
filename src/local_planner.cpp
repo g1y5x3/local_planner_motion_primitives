@@ -89,7 +89,7 @@ class LocalPlanner : public rclcpp::Node
     static const int path_num = 343;
     static const int path_points_num = 103243;
     pcl::PointCloud<pcl::PointXYZI>::Ptr paths[path_num];
-    std::vector<int> path_id, path_group_id;
+    std::vector<int> paths_id[path_num], paths_group_id[path_num];
 
     // planner parameters
     const double threshold_adjacent = 3.5;
@@ -219,7 +219,7 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
-    // For visualization only 
+    // For visualization only
     void read_path()
     {
       this->get_parameter("pregen_path_dir", pregen_path_dir);
@@ -231,11 +231,62 @@ class LocalPlanner : public rclcpp::Node
         exit(1);
       }
 
+      // initialization
+      for (int i = 0; i < path_num; i++){
+        paths[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
+      }
+
       pcl::PointXYZI point;
+      int path_id, path_group_id;
       int status_x, status_y, status_z, status_path_id, status_path_group_id;
-      // for (int i = 0; i < path_points_num; i += 30) {
-      //   fscanf  
-      // }
+
+      // since the path points are used for display purpose, reduce the total number of displayed points
+      // to save computation
+      int skip_count = 0;
+      int skip_num = 43;
+
+      for (int i = 0; i < path_points_num; i++) {
+        status_x = fscanf(file_ptr, "%f", &point.x);
+        status_y = fscanf(file_ptr, "%f", &point.y);
+        status_z = fscanf(file_ptr, "%f", &point.z);
+        status_path_id = fscanf(file_ptr, "%d", &path_id);
+        status_path_group_id = fscanf(file_ptr, "%d", &path_group_id);
+
+        // std::cout << "Point: " << point.x << ", " << point.y << ", " << point.z
+        //           << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
+
+        if (status_x != 1 || status_y != 1 || status_z != 1 || status_path_id != 1 || status_path_group_id != 1) {
+          RCLCPP_INFO(this->get_logger(), "Error reading paths, exit.");
+          exit(1);
+        }
+
+        if (path_id >= 0 && path_id < path_points_num){
+          skip_count++;
+          if (skip_count > skip_num) {
+            paths[path_id]->push_back(point);
+            paths_id[path_id].push_back(path_id);
+            paths_group_id[path_id].push_back(path_group_id);
+            skip_count = 0;
+          }
+        }
+      }
+
+      // print the points and ids to inspect
+      for (int i = 0; i < path_num; i++){
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
+        std::vector<int> cloud_path_id = paths_id[i];
+        std::vector<int> cloud_path_group_id = paths_group_id[i];
+        for(size_t j = 0; j < cloud->size(); j++){
+          pcl::PointXYZI point = cloud->points[j];
+          path_id = cloud_path_id[j];
+          path_group_id = cloud_path_group_id[j];
+
+          std::cout << i 
+                    << " Point: " << point.x << ", " << point.y << ", " << point.z
+                    << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
+        }
+        
+      }
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded paths!");
       fclose(file_ptr);
