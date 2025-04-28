@@ -271,7 +271,7 @@ class LocalPlanner : public rclcpp::Node
         }
       }
 
-      // print the points and ids to inspect
+      // TODO: PRINT THE POINTS AND PATH ID TO INSPECT THE LOADING FUNCTION. DELETE LATER!
       for (int i = 0; i < path_num; i++){
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
         std::vector<int> cloud_path_id = paths_id[i];
