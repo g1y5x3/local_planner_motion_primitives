@@ -27,6 +27,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
+      planner_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       p_robot_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
       p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
@@ -52,7 +53,7 @@ class LocalPlanner : public rclcpp::Node
       // then convert it to be under /base_link frame
       p_goal_base_->header.stamp = this->get_clock()->now();
       p_goal_base_->header.frame_id = "base_link";
-      p_goal_base_->pose.position.x = 1.0;
+      p_goal_base_->pose.position.x = 8.0;
       p_goal_base_->pose.position.y = 0.0;
       p_goal_base_->pose.position.z = 0.0;
       p_goal_base_->pose.orientation.x = 0.0;
@@ -66,6 +67,8 @@ class LocalPlanner : public rclcpp::Node
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
+      // TODO: REMOVE LATER, ONLY FOR INSPECTION
+      filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
 
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
 
@@ -96,7 +99,8 @@ class LocalPlanner : public rclcpp::Node
 
     // planner parameters
     const double threshold_adjacent = 3.5;
-    const double threshold_height = 0.2;
+    const double z_min = -0.45;
+    const double z_max = 0.65;
 
     // planner other variables
     float goal_distance;
@@ -107,11 +111,10 @@ class LocalPlanner : public rclcpp::Node
     int penalty_pathlist[36 * path_num] = {0};
 
     // point clouds
-    pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
-
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
 
     // poses to be tracked
@@ -121,6 +124,7 @@ class LocalPlanner : public rclcpp::Node
 
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
@@ -299,14 +303,36 @@ class LocalPlanner : public rclcpp::Node
     void local_planner_callback()
     {
       // rclcpp::Time current_time = this->get_clock()->now();
-      // RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
+      RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
       float p_relative_x = p_goal_base_->pose.position.x;
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
-      // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
+      RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
-      //clear search info
+      // filter point cloud based on height to identify obstacles
+      planner_cloud_->clear();
+      pcl::PointXYZI point;
+      for (size_t i = 0; i < lidar_cloud_dwz_->points.size(); i++){
+        point.x = lidar_cloud_dwz_->points[i].x;
+        point.y = lidar_cloud_dwz_->points[i].y;
+        point.z = lidar_cloud_dwz_->points[i].z;
+
+        if (point.z > z_min && point.z < z_max) {
+          planner_cloud_->push_back(point);
+        }
+      }
+
+      // FOR INSPECT THE CROPPED OBSTACLE POINTCLOUD
+      RCLCPP_INFO(this->get_logger(), "after height crop %ld", planner_cloud_->points.size());
+      sensor_msgs::msg::PointCloud2 cropped_msg;
+      pcl::toROSMsg(*planner_cloud_, cropped_msg);
+      cropped_msg.header.frame_id = "base_link";
+      cropped_msg.header.stamp = this->now();
+      filtered_cloud_pub_->publish(cropped_msg);
+
+      // Obstacle avoidance
+      // clear search info
       for (int i = 0; i < 36 * path_num; i++){
         clear_pathlist[i] = 0;
         penalty_pathlist[i] = 0;
