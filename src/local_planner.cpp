@@ -1,4 +1,6 @@
 #include <cmath>
+#include <iostream>
+#include <iomanip>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -46,8 +48,6 @@ class LocalPlanner : public rclcpp::Node
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-      // publisher and subscriber
-
       // TODO: replaced with a goal pose subscriber under the /map frame and
       // then convert it to be under /base_link frame
       p_goal_base_->header.stamp = this->get_clock()->now();
@@ -65,7 +65,10 @@ class LocalPlanner : public rclcpp::Node
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
+      marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
+
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
+
     }
 
   private:
@@ -118,6 +121,7 @@ class LocalPlanner : public rclcpp::Node
 
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
     rclcpp::TimerBase::SharedPtr planner_loop_;
@@ -281,7 +285,7 @@ class LocalPlanner : public rclcpp::Node
           path_id = cloud_path_id[j];
           path_group_id = cloud_path_group_id[j];
 
-          std::cout << i 
+          std::cout << "Path: " <<  i 
                     << " Point: " << point.x << ", " << point.y << ", " << point.z
                     << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
         }
@@ -303,13 +307,43 @@ class LocalPlanner : public rclcpp::Node
       // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
       //clear search info
-      for (int i = 0; i < 36 * path_num; i++) {
+      for (int i = 0; i < 36 * path_num; i++){
         clear_pathlist[i] = 0;
         penalty_pathlist[i] = 0;
       }
 
       // criteria to select the group ID for paths
+      visualization_msgs::msg::MarkerArray path_marker_array;
 
+      for(int i = 0; i < path_num; i++){
+        visualization_msgs::msg::Marker path_marker;
+        path_marker.header.frame_id = "base_link";
+        path_marker.header.stamp = this->now();
+        path_marker.ns = "path_display";
+        path_marker.id = i;
+        path_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        path_marker.action = visualization_msgs::msg::Marker::ADD;
+        path_marker.pose.orientation.w = 1.0;
+
+        path_marker.scale.x = 0.01; // Line width
+        path_marker.color.r = 1.0f;
+        path_marker.color.g = 1.0f;
+        path_marker.color.b = 0.0f;
+        path_marker.color.a = 1.0;
+        path_marker.lifetime = rclcpp::Duration::from_seconds(0);
+
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
+        for(size_t i = 0; i < cloud->size(); i++){
+          pcl::PointXYZI point = cloud->points[i];
+          geometry_msgs::msg::Point p;
+          p.x = point.x;
+          p.y = point.y;
+          p.z = point.z;
+          path_marker.points.push_back(p);
+        }
+        path_marker_array.markers.push_back(path_marker);
+      }
+      marker_array_pub_->publish(path_marker_array);
     }
 };
 
