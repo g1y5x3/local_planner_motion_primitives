@@ -99,6 +99,7 @@ class LocalPlanner : public rclcpp::Node
 
     // planner parameters
     const double threshold_adjacent = 3.5;
+    const double robot_radius = 0.75;
     const double z_min = -0.45;
     const double z_max = 0.65;
 
@@ -174,7 +175,9 @@ class LocalPlanner : public rclcpp::Node
         point = lidar_cloud_->points[i];
         float distance = sqrt((point.x * point.x) + (point.y * point.y));
 
-        if (distance < threshold_adjacent) {
+        // filter out the point that's either from the robot body or further
+        // than the pre-generated path
+        if (distance < threshold_adjacent && distance > robot_radius) {
           lidar_cloud_crop_->push_back(point);
         }
       }
@@ -303,7 +306,7 @@ class LocalPlanner : public rclcpp::Node
     void local_planner_callback()
     {
       // rclcpp::Time current_time = this->get_clock()->now();
-      RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
+      // RCLCPP_INFO(this->get_logger(), "Current ROS Time: %ld", current_time.nanoseconds());
       float p_relative_x = p_goal_base_->pose.position.x;
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
