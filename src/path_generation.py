@@ -88,8 +88,8 @@ plt.show()
 # These parameters are also used in the local_planner node
 # TODO: make it read from a yaml file
 
-voxel_size = 0.05
 search_radius = 0.45
+voxel_size = 0.05
 offset_x = 3.2
 offset_y = 4.5
 voxel_num_x = int((offset_x / voxel_size) + 1)
@@ -98,13 +98,16 @@ voxel_num_y = int(2 * (offset_y / voxel_size) + 1)
 # Divide the space within the defined search area into voxels
 # TODO: currently its assigning the same amout of points regardless of the scale_y
 voxel_points = []
+num_iterations = []
 for ind_x in range(voxel_num_x):
     x = offset_x - voxel_size * ind_x
     scale_y = x / offset_x + search_radius / offset_y * (offset_x - x) / offset_x
-    # print(f"num_iterations {(voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y)}")
+    num_iterations.append((voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y))
+    print(f"{(voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y)}")
     for ind_y in range(0, voxel_num_y, int(1/scale_y)):
         y = scale_y * (offset_y - voxel_size * ind_y)
         voxel_points.append([x, y])
+print(f"totoal num {sum(num_iterations)}")
 
 voxel_points = np.array(voxel_points)
 

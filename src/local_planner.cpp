@@ -1,6 +1,7 @@
 #include <cmath>
-#include <iostream>
+#include <numeric>
 #include <iomanip>
+#include <iostream>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -41,6 +42,11 @@ class LocalPlanner : public rclcpp::Node
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
       this->read_path();
+
+      // TODO: FOR INSPECTION PURPOSE, DELETE LATER
+      int total_sum = 0;
+      total_sum = std::accumulate(voxel_num_y_per_x, voxel_num_y_per_x + 65, total_sum);
+      std::cout << "total sum " << total_sum << std::endl;
 
       // pcl filters initializations
       lidar_filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
@@ -84,8 +90,6 @@ class LocalPlanner : public rclcpp::Node
     const int num_group = 7;
 
     // path and voxel parameters
-    // const float voxel_size = 0.05;
-    // const float search_radius = 0.45;
     const int voxel_num = 8350;
     const int path_group_num = 7;
     static const int path_num = 343;
@@ -98,11 +102,27 @@ class LocalPlanner : public rclcpp::Node
     const double robot_radius = 0.75;
     const double z_min = -0.45;
     const double z_max = 0.65;
-    const float voxel_size = 0.05;
-    const float offset_x = 3.2;
-    const float offset_y = 4.5;
-    const int voxel_num_x = int((offset_x / voxel_size) + 1);
-    const int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
+    const float search_radius = 0.45;
+    static constexpr float voxel_size = 0.05;
+    static constexpr float offset_x = 3.2;
+    static constexpr float offset_y = 4.5;
+    static constexpr int voxel_num_x = int((offset_x / voxel_size) + 1);
+    static constexpr int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
+    // TODO: LOAD THIS ARRAY FROM A HEADER FILE
+    static constexpr int voxel_num_y_per_x[voxel_num_x] = {
+      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
+      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
+      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
+      181, 181, 181, 181, 181, 181,
+      91, 91, 91, 91, 91, 91, 91, 91, 91, 91, 91, 91,
+      61, 61, 61, 61, 61, 61,
+      46, 46, 46,
+      37, 37, 37,
+      31,
+      26, 26,
+      23,
+      21
+    };
 
     // planner other variables
     float goal_distance;
@@ -133,7 +153,6 @@ class LocalPlanner : public rclcpp::Node
     rclcpp::TimerBase::SharedPtr planner_loop_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
-
 
     // extract only the position from odometry and convert it from /odom frame to /map frame
     void pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
@@ -293,11 +312,11 @@ class LocalPlanner : public rclcpp::Node
           path_id = cloud_path_id[j];
           path_group_id = cloud_path_group_id[j];
 
-          std::cout << "Path: " <<  i 
+          std::cout << "Path: " <<  i
                     << " Point: " << point.x << ", " << point.y << ", " << point.z
                     << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
         }
-        
+
       }
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded paths!");
@@ -310,7 +329,7 @@ class LocalPlanner : public rclcpp::Node
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
-      RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
+      // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
       // filter point cloud to only keep points from the obstacles
       planner_cloud_->clear();
@@ -326,10 +345,10 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // FOR INSPECT THE CROPPED OBSTACLE POINTCLOUD
-      std::cout << "voxel num x: " << voxel_num_x << std::endl 
-                << "voxel num y: " << voxel_num_y << std::endl;
+      // std::cout << "voxel num x: " << voxel_num_x << std::endl
+                // << "voxel num y: " << voxel_num_y << std::endl;
 
-      RCLCPP_INFO(this->get_logger(), "after height crop %ld", planner_cloud_->points.size());
+      // RCLCPP_INFO(this->get_logger(), "after height crop %ld", planner_cloud_->points.size());
       sensor_msgs::msg::PointCloud2 cropped_msg;
       pcl::toROSMsg(*planner_cloud_, cropped_msg);
       cropped_msg.header.frame_id = "base_link";
@@ -348,7 +367,9 @@ class LocalPlanner : public rclcpp::Node
         float y = planner_cloud_->points[i].y;
         float z = planner_cloud_->points[i].z;
 
-        // look up the corresponding voxels given the points after filtering
+        // since voxel grids were already pre-generated, points from the lidar
+        // can be directly mapped to the indices of voxels, thus avoid using a
+        // more expensive methods search as KD-tree, etc
 
       }
 
