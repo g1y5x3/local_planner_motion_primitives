@@ -367,9 +367,12 @@ class LocalPlanner : public rclcpp::Node
         float y = planner_cloud_->points[i].y;
         float z = planner_cloud_->points[i].z;
 
+        // NOTE:
         // since voxel grids were already pre-generated, points from the lidar
         // can be directly mapped to the indices of voxels, thus avoid using a
         // more expensive methods search as KD-tree, etc
+        int ind_x = int((offset_x + voxel_size / 2 - x) / voxel_size);
+        std::cout << ind_x << std::endl;
 
       }
 

@@ -103,8 +103,10 @@ for ind_x in range(voxel_num_x):
     x = offset_x - voxel_size * ind_x
     scale_y = x / offset_x + search_radius / offset_y * (offset_x - x) / offset_x
     num_iterations.append((voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y))
+    print(f"scale_y {scale_y}")
     print(f"{(voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y)}")
     for ind_y in range(0, voxel_num_y, int(1/scale_y)):
+        print(f"ind_y {ind_y}")
         y = scale_y * (offset_y - voxel_size * ind_y)
         voxel_points.append([x, y])
 print(f"totoal num {sum(num_iterations)}")
