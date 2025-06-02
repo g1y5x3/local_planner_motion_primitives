@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import matplotlib.pyplot as plt
 from typing import List, Tuple, Optional, Union
 
 class UniformGridIndexer:
@@ -51,6 +52,17 @@ class UniformGridIndexer:
                 y_center = self.y_min + (iy + 0.5) * self.voxel_size
                 centers[idx] = [x_center, y_center]
                 idx += 1
+
+        fig = plt.figure(figsize=(10, 12))
+        ax = fig.add_subplot(111)
+        ax.plot(centers[:, 0], centers[:, 1], marker='x', color='blue', linestyle='none')
+        # ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\nvoxel x num {voxel_num_x}\nvoxel y num {voxel_num_y}')
+        # ax.set_xlim([-0.2, 3.5])
+        # ax.set_ylim([-4.5, 4.5])
+        plt.xlabel('X (m)')
+        plt.ylabel('Y (m)')
+        plt.show()
+
         return centers
 
     def world_to_grid_coords(self, x: float, y: float) -> Tuple[int, int]:
@@ -100,6 +112,8 @@ if __name__ == "__main__":
         y_max=4.5,
         voxel_size=0.05
     )
+
+
     
     # Test coordinate conversion
     test_points = [
