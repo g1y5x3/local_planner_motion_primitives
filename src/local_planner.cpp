@@ -108,21 +108,6 @@ class LocalPlanner : public rclcpp::Node
     static constexpr float offset_y = 4.5;
     static constexpr int voxel_num_x = int((offset_x / voxel_size) + 1);
     static constexpr int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
-    // TODO: LOAD THIS ARRAY FROM A HEADER FILE
-    static constexpr int voxel_num_y_per_x[voxel_num_x] = {
-      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
-      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
-      181, 181, 181, 181, 181, 181, 181, 181, 181, 181,
-      181, 181, 181, 181, 181, 181,
-      91, 91, 91, 91, 91, 91, 91, 91, 91, 91, 91, 91,
-      61, 61, 61, 61, 61, 61,
-      46, 46, 46,
-      37, 37, 37,
-      31,
-      26, 26,
-      23,
-      21
-    };
 
     // planner other variables
     float goal_distance;

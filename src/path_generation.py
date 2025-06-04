@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from scipy.spatial import cKDTree
 from scipy.interpolate import CubicSpline
@@ -88,28 +89,22 @@ plt.show()
 # These parameters are also used in the local_planner node
 # TODO: make it read from a yaml file
 
-search_radius = 0.45
 voxel_size = 0.05
-offset_x = 3.2
-offset_y = 4.5
-voxel_num_x = int((offset_x / voxel_size) + 1)
-voxel_num_y = int(2 * (offset_y / voxel_size) + 1)
+x_min = 0
+x_max = 3.2
+y_min = -3
+y_max = 3
+num_voxels_x = int(math.ceil((x_max - x_min) / voxel_size))
+num_voxels_y = int(math.ceil((y_max - y_min) / voxel_size))
 
-# Divide the space within the defined search area into voxels
-# TODO: currently its assigning the same amout of points regardless of the scale_y
 voxel_points = []
-num_iterations = []
-for ind_x in range(voxel_num_x):
-    x = offset_x - voxel_size * ind_x
-    scale_y = x / offset_x + search_radius / offset_y * (offset_x - x) / offset_x
-    num_iterations.append((voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y))
-    print(f"scale_y {scale_y}")
-    print(f"{(voxel_num_y + int(1/scale_y) - 1) // int(1/scale_y)}")
-    for ind_y in range(0, voxel_num_y, int(1/scale_y)):
-        print(f"ind_y {ind_y}")
-        y = scale_y * (offset_y - voxel_size * ind_y)
-        voxel_points.append([x, y])
-print(f"totoal num {sum(num_iterations)}")
+for ix in range(num_voxels_x):
+    for iy in range(num_voxels_y):
+        # without the + 0.5, the calculation would give the coordinates of the 
+        # bottom-left corner of each voxel instead of the center of the voxel.
+        x_center = x_min + (ix + 0.5) * voxel_size
+        y_center = y_min + (iy + 0.5) * voxel_size
+        voxel_points.append([x_center, y_center])
 
 voxel_points = np.array(voxel_points)
 
@@ -117,7 +112,7 @@ voxel_points = np.array(voxel_points)
 fig = plt.figure(figsize=(10, 12))
 ax = fig.add_subplot(111)
 ax.plot(voxel_points[:, 0], voxel_points[:, 1], marker='x', color='blue', linestyle='none')
-ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\nvoxel x num {voxel_num_x}\nvoxel y num {voxel_num_y}')
+ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\nvoxel x num {num_voxels_x}\nvoxel y num {num_voxels_y}')
 ax.set_xlim([-0.2, 3.5])
 ax.set_ylim([-4.5, 4.5])
 plt.xlabel('X (m)')
@@ -126,6 +121,7 @@ plt.show()
 
 #Collision checking (Memory Intensitve)
 # For every points in the path, check whether there is any point next to it within the radius in the voxel points
+search_radius = 0.45
 path_points = np.vstack([path[:, :2] for path in path_all])
 kdtree = cKDTree(path_points)
 indices = kdtree.query_ball_point(voxel_points, search_radius)
