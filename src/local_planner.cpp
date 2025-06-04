@@ -43,11 +43,6 @@ class LocalPlanner : public rclcpp::Node
       this->read_voxel_path_correspondence();
       this->read_path();
 
-      // TODO: FOR INSPECTION PURPOSE, DELETE LATER
-      int total_sum = 0;
-      total_sum = std::accumulate(voxel_num_y_per_x, voxel_num_y_per_x + 65, total_sum);
-      std::cout << "total sum " << total_sum << std::endl;
-
       // pcl filters initializations
       lidar_filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
 
@@ -90,7 +85,8 @@ class LocalPlanner : public rclcpp::Node
     const int num_group = 7;
 
     // path and voxel parameters
-    const int voxel_num = 8350;
+    // TODO load these parameters from a yaml file
+    const int voxel_num = 7680;
     const int path_group_num = 7;
     static const int path_num = 343;
     static const int path_points_num = 103243;
@@ -180,17 +176,21 @@ class LocalPlanner : public rclcpp::Node
         point = lidar_cloud_->points[i];
         float distance = sqrt((point.x * point.x) + (point.y * point.y));
 
-        // filter out the point that's either from the robot body or further
-        // than the pre-generated path
-        if (distance < threshold_adjacent && distance > robot_radius) {
+        // filter out the point that's either 
+        // 1. from the robot body
+        // 2. further than the pre-generated path
+        // 3. height exceeds the threshold
+        if (distance < threshold_adjacent && distance > robot_radius &&
+            point.z > z_min && point.z < z_max) {
           lidar_cloud_crop_->push_back(point);
         }
       }
-      // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size());
 
-      lidar_cloud_dwz_->clear();
+      planner_cloud_->clear();
+      // RCLCPP_INFO(this->get_logger(), "after crop %ld", lidar_cloud_crop_->points.size());
+      // lidar_cloud_dwz_->clear();
       lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
-      lidar_filter_DWZ.filter(*lidar_cloud_dwz_);
+      lidar_filter_DWZ.filter(*planner_cloud_);
       // RCLCPP_INFO(this->get_logger(), "after DWZ %ld", lidar_cloud_dwz_->points.size());
     }
 
@@ -210,7 +210,7 @@ class LocalPlanner : public rclcpp::Node
         // first read the voxel index
         status = fscanf(file_ptr, "%d", &voxel_id);
         if (status != 1) {
-          RCLCPP_INFO(this->get_logger(), "Error reading voxel, exit.");
+          RCLCPP_INFO(this->get_logger(), "Error reading voxel index, exit.");
           exit(1);
         }
 
@@ -316,24 +316,12 @@ class LocalPlanner : public rclcpp::Node
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
       // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
-      // filter point cloud to only keep points from the obstacles
-      planner_cloud_->clear();
-      pcl::PointXYZI point;
-      for (size_t i = 0; i < lidar_cloud_dwz_->points.size(); i++){
-        point.x = lidar_cloud_dwz_->points[i].x;
-        point.y = lidar_cloud_dwz_->points[i].y;
-        point.z = lidar_cloud_dwz_->points[i].z;
-
-        if (point.z > z_min && point.z < z_max) {
-          planner_cloud_->push_back(point);
-        }
-      }
-
       // FOR INSPECT THE CROPPED OBSTACLE POINTCLOUD
       // std::cout << "voxel num x: " << voxel_num_x << std::endl
                 // << "voxel num y: " << voxel_num_y << std::endl;
 
       // RCLCPP_INFO(this->get_logger(), "after height crop %ld", planner_cloud_->points.size());
+      // THIS IS FOR INSPECTION
       sensor_msgs::msg::PointCloud2 cropped_msg;
       pcl::toROSMsg(*planner_cloud_, cropped_msg);
       cropped_msg.header.frame_id = "base_link";
@@ -351,6 +339,7 @@ class LocalPlanner : public rclcpp::Node
         float x = planner_cloud_->points[i].x;
         float y = planner_cloud_->points[i].y;
         float z = planner_cloud_->points[i].z;
+
 
         // NOTE:
         // since voxel grids were already pre-generated, points from the lidar
