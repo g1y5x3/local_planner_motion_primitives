@@ -314,6 +314,7 @@ class LocalPlanner : public rclcpp::Node
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
+
       // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
 
       // FOR INSPECT THE CROPPED OBSTACLE POINTCLOUD
@@ -339,14 +340,11 @@ class LocalPlanner : public rclcpp::Node
         float x = planner_cloud_->points[i].x;
         float y = planner_cloud_->points[i].y;
         float z = planner_cloud_->points[i].z;
+        float distance = sqrt(x * x + y * y);
 
-
-        // NOTE:
-        // since voxel grids were already pre-generated, points from the lidar
-        // can be directly mapped to the indices of voxels, thus avoid using a
-        // more expensive methods search as KD-tree, etc
-        int ind_x = int((offset_x + voxel_size / 2 - x) / voxel_size);
-        std::cout << ind_x << std::endl;
+        // for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
+        //   
+        // }
 
       }
 
