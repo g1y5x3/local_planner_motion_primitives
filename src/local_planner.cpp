@@ -37,6 +37,7 @@ class LocalPlanner : public rclcpp::Node
       this->declare_parameter<double>("dwz_voxel_size", 0.05);
 
       // load pre-generated path & voxel correspondence
+      this->get_parameter("pregen_path_dir", pregen_path_dir);
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
 
@@ -164,12 +165,11 @@ class LocalPlanner : public rclcpp::Node
       }
       pcl::fromROSMsg(*msg_base, *lidar_cloud_);
 
-      // apply filtering
+      // apply distance and height based filtering
       lidar_cloud_crop_->clear();
-      pcl::PointXYZI point;
       int num_points = lidar_cloud_->points.size();
-      // RCLCPP_INFO(this->get_logger(), "original %d", num_points);
 
+      pcl::PointXYZI point;
       for (int i = 0; i < num_points; i++) {
         point = lidar_cloud_->points[i];
         float distance = sqrt((point.x * point.x) + (point.y * point.y));
@@ -184,6 +184,7 @@ class LocalPlanner : public rclcpp::Node
         }
       }
 
+      // apply DWZ voxel grid filter
       planner_cloud_->clear();
       lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
       lidar_filter_DWZ.filter(*planner_cloud_);
@@ -191,7 +192,6 @@ class LocalPlanner : public rclcpp::Node
 
     void read_voxel_path_correspondence()
     {
-      this->get_parameter("pregen_path_dir", pregen_path_dir);
       std::string filename = pregen_path_dir + "/pregen_voxel_path_corr.txt";
 
       FILE *file_ptr = fopen(filename.c_str(), "r");
@@ -254,7 +254,6 @@ class LocalPlanner : public rclcpp::Node
     // For visualization only
     void read_path()
     {
-      this->get_parameter("pregen_path_dir", pregen_path_dir);
       std::string filename = pregen_path_dir + "/pregen_path_all.txt";
 
       FILE *file_ptr = fopen(filename.c_str(), "r");
