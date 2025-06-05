@@ -38,10 +38,9 @@ class LocalPlanner : public rclcpp::Node
 
       this->get_parameter("lidar_voxel_size", lidar_voxel_size);
 
-      // read pre generated paths
+      // read pre-generated path & voxel correspondence
       voxel_path_corr.resize(voxel_num);
       this->read_voxel_path_correspondence();
-      this->read_path();
 
       // pcl filters initializations
       lidar_filter_DWZ.setLeafSize(lidar_voxel_size, lidar_voxel_size, lidar_voxel_size);
@@ -73,6 +72,8 @@ class LocalPlanner : public rclcpp::Node
 
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
 
+      // IF DEBUGGING
+      this->read_path();
     }
 
   private:
@@ -81,17 +82,16 @@ class LocalPlanner : public rclcpp::Node
     // pregenerated paths (TODO: Load from a file maybe)
     std::string pregen_path_dir;
     std::vector<std::vector<int>> voxel_path_corr;
-    const int num_path = 343;
-    const int num_group = 7;
-
-    // path and voxel parameters
-    // TODO load these parameters from a yaml file
-    const int voxel_num = 7680;
-    const int path_group_num = 7;
-    static const int path_num = 343;
+    static const int num_group = 7;
+    static const int num_path = 343;
     static const int path_points_num = 103243;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr paths[path_num];
-    std::vector<int> paths_id[path_num], paths_group_id[path_num];
+    const int voxel_num = 7680;
+    // path and voxel parameters
+    // const int path_group_num = 7;
+    // static const int path_num = 343;
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path];
+    std::vector<int> paths_id[num_path], paths_group_id[num_path];
 
     // planner parameters
     const double threshold_adjacent = 3.5;
@@ -110,8 +110,7 @@ class LocalPlanner : public rclcpp::Node
     float goal_angle;
 
     // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
-    int clear_pathlist[36 * path_num] = {0};
-    int penalty_pathlist[36 * path_num] = {0};
+    float unifiedPathScore[36 * num_group] = {0.0f};
 
     // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
@@ -248,7 +247,7 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // initialization
-      for (int i = 0; i < path_num; i++){
+      for (int i = 0; i < num_path; i++){
         paths[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
       }
 
@@ -268,9 +267,6 @@ class LocalPlanner : public rclcpp::Node
         status_path_id = fscanf(file_ptr, "%d", &path_id);
         status_path_group_id = fscanf(file_ptr, "%d", &path_group_id);
 
-        // std::cout << "Point: " << point.x << ", " << point.y << ", " << point.z
-        //           << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
-
         if (status_x != 1 || status_y != 1 || status_z != 1 || status_path_id != 1 || status_path_group_id != 1) {
           RCLCPP_INFO(this->get_logger(), "Error reading paths, exit.");
           exit(1);
@@ -288,21 +284,21 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // TODO: PRINT THE POINTS AND PATH ID TO INSPECT THE LOADING FUNCTION. DELETE LATER!
-      for (int i = 0; i < path_num; i++){
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
-        std::vector<int> cloud_path_id = paths_id[i];
-        std::vector<int> cloud_path_group_id = paths_group_id[i];
-        for(size_t j = 0; j < cloud->size(); j++){
-          pcl::PointXYZI point = cloud->points[j];
-          path_id = cloud_path_id[j];
-          path_group_id = cloud_path_group_id[j];
+      // for (int i = 0; i < path_num; i++){
+      //   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
+      //   std::vector<int> cloud_path_id = paths_id[i];
+      //   std::vector<int> cloud_path_group_id = paths_group_id[i];
+      //   for(size_t j = 0; j < cloud->size(); j++){
+      //     pcl::PointXYZI point = cloud->points[j];
+      //     path_id = cloud_path_id[j];
+      //     path_group_id = cloud_path_group_id[j];
 
-          std::cout << "Path: " <<  i
-                    << " Point: " << point.x << ", " << point.y << ", " << point.z
-                    << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
-        }
+      //     std::cout << "Path: " <<  i
+      //               << " Point: " << point.x << ", " << point.y << ", " << point.z
+      //               << " Path ID: " << path_id << " Group ID: " << path_group_id << std::endl;
+      //   }
 
-      }
+      // }
 
       RCLCPP_INFO(this->get_logger(), "Successfully loaded paths!");
       fclose(file_ptr);
@@ -314,26 +310,6 @@ class LocalPlanner : public rclcpp::Node
       float p_relative_y = p_goal_base_->pose.position.y;
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
-
-      // RCLCPP_INFO(this->get_logger(), "Distance: %f, Angle: %f", goal_distance, goal_angle);
-
-      // FOR INSPECT THE CROPPED OBSTACLE POINTCLOUD
-      // std::cout << "voxel num x: " << voxel_num_x << std::endl
-                // << "voxel num y: " << voxel_num_y << std::endl;
-
-      // RCLCPP_INFO(this->get_logger(), "after height crop %ld", planner_cloud_->points.size());
-      // THIS IS FOR INSPECTION
-      sensor_msgs::msg::PointCloud2 cropped_msg;
-      pcl::toROSMsg(*planner_cloud_, cropped_msg);
-      cropped_msg.header.frame_id = "base_link";
-      cropped_msg.header.stamp = this->now();
-      filtered_cloud_pub_->publish(cropped_msg);
-
-      // clear the path and path penalty list
-      for (int i = 0; i < 36 * path_num; i++){
-        clear_pathlist[i] = 0;
-        penalty_pathlist[i] = 0;
-      }
 
       // obstacle avoidance logic
       for (size_t i = 0; i < planner_cloud_->points.size(); i++){
@@ -348,10 +324,18 @@ class LocalPlanner : public rclcpp::Node
 
       }
 
-      // criteria to select the group ID for paths
-      visualization_msgs::msg::MarkerArray path_marker_array;
+      // FOR DEBUGGING
 
-      for(int i = 0; i < path_num; i++){
+      // VISUALIZATION FOR THE FILTERED POINTCLOUD
+      sensor_msgs::msg::PointCloud2 cropped_msg;
+      pcl::toROSMsg(*planner_cloud_, cropped_msg);
+      cropped_msg.header.frame_id = "base_link";
+      cropped_msg.header.stamp = this->now();
+      filtered_cloud_pub_->publish(cropped_msg);
+
+      // VISUALIZATION FOR THE PATHS
+      visualization_msgs::msg::MarkerArray path_marker_array;
+      for(int i = 0; i < num_path; i++){
         visualization_msgs::msg::Marker path_marker;
         path_marker.header.frame_id = "base_link";
         path_marker.header.stamp = this->now();
