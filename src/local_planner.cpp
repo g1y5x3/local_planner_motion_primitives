@@ -35,11 +35,14 @@ class LocalPlanner : public rclcpp::Node
       //Declare ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
       this->declare_parameter<double>("dwz_voxel_size", 0.05);
-      this->declare_parameter<double>("vehicle_length", 1.1);
-      this->declare_parameter<double>("vehicle_width", 0.5);
+      // Vehicle/Robot parameters
+      this->declare_parameter<double>("vehicle_length", 1.55);
+      this->declare_parameter<double>("vehicle_width", 0.95);
+      this->declare_parameter<double>("robot_body_radius", 0.5);
 
       this->get_parameter("vehicle_length", vehicle_length);
       this->get_parameter("vehicle_width", vehicle_width);
+      this->get_parameter("robot_body_radius", robot_body_radius);
       RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_length, vehicle_width);
      
       // load pre-generated path & voxel correspondence
@@ -88,6 +91,7 @@ class LocalPlanner : public rclcpp::Node
     double dwz_voxel_size;  // lidar point cloud DWZ filter param
     double vehicle_length;
     double vehicle_width;
+    double robot_body_radius;
 
     // pregenerated paths (TODO: Load from a file maybe)
     std::string pregen_path_dir;
@@ -102,8 +106,8 @@ class LocalPlanner : public rclcpp::Node
     std::vector<int> paths_id[num_path], paths_group_id[num_path];
 
     // planner parameters
+    const int threshold_dir = 90;
     const double threshold_adjacent = 3.5;
-    const double robot_radius = 0.75;
     const double z_min = -0.45;
     const double z_max = 0.65;
     const float search_radius = 0.45;
@@ -150,8 +154,6 @@ class LocalPlanner : public rclcpp::Node
       try {
         p_robot_map_->header.frame_id = "map";
         tf_buffer_->transform(*msg, *p_robot_map_, "map", tf2::durationFromSec(0.1));
-        RCLCPP_INFO(this->get_logger(), "Received pose under frame '%s' and converted to frame '%s'.",
-                    msg->header.frame_id.c_str(), p_robot_map_->header.frame_id.c_str());
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
         return;
@@ -165,8 +167,6 @@ class LocalPlanner : public rclcpp::Node
       try {
         msg_base->header.frame_id = "base_link";
         tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
-        RCLCPP_INFO(this->get_logger(), "Received cloud under frame '%s' and converted to frame '%s'.",
-                    msg->header.frame_id.c_str(), msg_base->header.frame_id.c_str());
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
         return;
@@ -186,7 +186,8 @@ class LocalPlanner : public rclcpp::Node
         // 1. from the robot body
         // 2. further than the pre-generated path
         // 3. height exceeds the threshold
-        if (distance < threshold_adjacent && distance > robot_radius &&
+        if (distance > robot_body_radius &&
+            distance < threshold_adjacent && 
             point.z > z_min && point.z < z_max) {
           lidar_cloud_crop_->push_back(point);
         }
@@ -250,14 +251,49 @@ class LocalPlanner : public rclcpp::Node
         path_score[i] = 0.0f;
       }
 
-      //
+      // calculate rotation obstacle bounds
       float minObsAngCW = -180.0;
       float minObsAngCCW = 180.0;
-      float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + vehicle_width / 2.0 * vehicle_width / 2.0);
+      float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + 
+                            vehicle_width / 2.0 * vehicle_width / 2.0);
+
       float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
 
-      // obstacle avoidance logic
+      int planner_cloud_size = planner_cloud_->points.size();
+      for (int i = 0; i < planner_cloud_size; i++) {
+        pcl::PointXYZI point = planner_cloud_->points[i];
+        float distance = sqrt(point.x * point.x + point.y * point.y);
 
+        if (distance < diameter) {
+          RCLCPP_INFO(this->get_logger(), "Obstacle point too close to the robot.");
+          float angObs = atan2(point.y, point.x) * 180 / M_PI;
+          if (angObs > 0) {
+            if (minObsAngCCW > angObs - angOffset) minObsAngCCW = angObs - angOffset;
+            if (minObsAngCW < angObs + angOffset - 180) minObsAngCW = angObs + angOffset - 180;
+          } else {
+            if (minObsAngCW < angObs + angOffset) minObsAngCW = angObs + angOffset;
+            if (minObsAngCCW > angObs - angOffset + 180) minObsAngCCW = angObs - angOffset + 180;
+          }
+        }
+      }
+
+      if (minObsAngCW > 0) minObsAngCW = 0;
+      if (minObsAngCCW < 0) minObsAngCCW = 0;
+      RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
+
+      // obstacle avoidance logic
+      // for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
+      //   float rot_ang = 10 * rot_dir - 180;
+      //   float ang_diff = fabs(goal_angle - rot_ang);
+      //   if (ang_diff > 180) {
+      //     ang_diff = 360 - ang_diff;
+      //   }
+
+      //   // if the angle difference is larger than the threshold, skip this rotation direction
+      //   if (ang_diff > threshold_dir) {
+      //     continue;
+      //   }
+      // }
     }
 
     // For visualization only
@@ -321,8 +357,45 @@ class LocalPlanner : public rclcpp::Node
       cropped_msg.header.stamp = this->now();
       filtered_cloud_pub_->publish(cropped_msg);
 
+
+
       // visualization for the paths
       visualization_msgs::msg::MarkerArray path_marker_array;
+
+      // Add circle marker to visualize robot diameter
+      visualization_msgs::msg::Marker circle_marker;
+      circle_marker.header.frame_id = "base_link";
+      circle_marker.header.stamp = this->now();
+      circle_marker.ns = "robot_diameter";
+      circle_marker.id = num_path + 1;  // Ensure unique ID
+      circle_marker.type = visualization_msgs::msg::Marker::CYLINDER;
+      circle_marker.action = visualization_msgs::msg::Marker::ADD;
+    
+      // Set circle position at robot center
+      circle_marker.pose.position.x = 0.0;
+      circle_marker.pose.position.y = 0.0;
+      circle_marker.pose.position.z = 0.0;
+      circle_marker.pose.orientation.w = 1.0;
+
+      // Set circle size based on diameter
+      float diameter = sqrt(vehicle_length/2.0 * vehicle_length/2.0 + 
+                            vehicle_width/2.0 * vehicle_width/2.0);
+      RCLCPP_INFO(this->get_logger(), "Diameter of the robot: %f", diameter); 
+      circle_marker.scale.x = diameter * 2;  // Diameter in x
+      circle_marker.scale.y = diameter * 2;  // Diameter in y
+      circle_marker.scale.z = 0.01;         // Thin height
+
+      // Set circle color (semi-transparent red)
+      circle_marker.color.r = 1.0f;
+      circle_marker.color.g = 0.0f;
+      circle_marker.color.b = 0.0f;
+      circle_marker.color.a = 0.3f;
+    
+      circle_marker.lifetime = rclcpp::Duration::from_seconds(0);
+    
+    // Add circle marker to marker array
+    path_marker_array.markers.push_back(circle_marker);
+
       for(int i = 0; i < num_path; i++){
         visualization_msgs::msg::Marker path_marker;
         path_marker.header.frame_id = "base_link";
