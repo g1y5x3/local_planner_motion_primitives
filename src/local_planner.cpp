@@ -32,10 +32,16 @@ class LocalPlanner : public rclcpp::Node
       p_robot_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
       p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
-      //Declare and load ROS parameters
+      //Declare ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
       this->declare_parameter<double>("dwz_voxel_size", 0.05);
+      this->declare_parameter<double>("vehicle_length", 1.1);
+      this->declare_parameter<double>("vehicle_width", 0.5);
 
+      this->get_parameter("vehicle_length", vehicle_length);
+      this->get_parameter("vehicle_width", vehicle_width);
+      RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_length, vehicle_width);
+     
       // load pre-generated path & voxel correspondence
       this->get_parameter("pregen_path_dir", pregen_path_dir);
       voxel_path_corr.resize(voxel_num);
@@ -80,6 +86,8 @@ class LocalPlanner : public rclcpp::Node
   private:
 
     double dwz_voxel_size;  // lidar point cloud DWZ filter param
+    double vehicle_length;
+    double vehicle_width;
 
     // pregenerated paths (TODO: Load from a file maybe)
     std::string pregen_path_dir;
@@ -110,7 +118,7 @@ class LocalPlanner : public rclcpp::Node
     float goal_angle;
 
     // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
-    float unifiedPathScore[36 * num_group] = {0.0f};
+    float path_score[36 * num_group] = {0.0f};
 
     // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
@@ -237,18 +245,19 @@ class LocalPlanner : public rclcpp::Node
       goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
       goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
 
-      // obstacle avoidance logic
-      for (size_t i = 0; i < planner_cloud_->points.size(); i++){
-        float x = planner_cloud_->points[i].x;
-        float y = planner_cloud_->points[i].y;
-        float z = planner_cloud_->points[i].z;
-        float distance = sqrt(x * x + y * y);
-
-        // for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
-        //   
-        // }
-
+      // reset path scores
+      for (int i = 0; i < 36 * num_group; i++) {
+        path_score[i] = 0.0f;
       }
+
+      //
+      float minObsAngCW = -180.0;
+      float minObsAngCCW = 180.0;
+      float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + vehicle_width / 2.0 * vehicle_width / 2.0);
+      float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
+
+      // obstacle avoidance logic
+
     }
 
     // For visualization only
