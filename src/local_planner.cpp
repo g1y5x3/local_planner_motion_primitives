@@ -109,13 +109,19 @@ class LocalPlanner : public rclcpp::Node
     const int threshold_dir = 90;
     const double threshold_adjacent = 3.5;
     const double z_min = -0.45;
-    const double z_max = 0.65;
+    const double z_max =  0.65;
     const float search_radius = 0.45;
-    static constexpr float voxel_size = 0.05;
-    static constexpr float offset_x = 3.2;
-    static constexpr float offset_y = 4.5;
-    static constexpr int voxel_num_x = int((offset_x / voxel_size) + 1);
-    static constexpr int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
+    const float x_min = 0.0f;
+    const float x_max = 3.2f; 
+    const float y_min = -3.0f;
+    const float y_max =  3.0f;
+    const float voxel_size = 0.05f;
+    
+    // static constexpr float voxel_size = 0.05;
+    // static constexpr float offset_x = 3.2;
+    // static constexpr float offset_y = 4.5;
+    // static constexpr int voxel_num_x = int((offset_x / voxel_size) + 1);
+    // static constexpr int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
 
     // planner other variables
     float goal_distance;
@@ -239,6 +245,46 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
+    // Count the number of obstacles in the planner cloud that are blocking the 
+    // path that is in the specified rotation direction and group ID.
+    int count_obstacles(int rot_dir, int group_id,
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
+    {
+      int total_obstacles = 0;
+      float rot_ang = (10.0 * rot_dir - 180.0) * M_PI / 180;
+                  
+      int planner_cloud_size = planner_cloud->points.size();
+      for (int i = 0; i < planner_cloud_size; i++) {
+        float x = planner_cloud->points[i].x;
+        float y = planner_cloud->points[i].y;
+
+        float x2 =  cos(rot_ang) * x + sin(rot_ang) * y;
+        float y2 = -sin(rot_ang) * x + cos(rot_ang) * y;
+
+        const int num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
+        const int num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
+
+        int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
+        int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
+
+        RCLCPP_INFO(this->get_logger(), "Point (%f, %f) in rotated frame is (%f, %f), voxel indices: (%d, %d)", 
+                   x, y, x2, y2, ix, iy);
+
+        // if (ind_x >= 0 && ind_x < voxel_num_x && ind_y >= 0 && ind_y < voxel_num_y) {
+        //   int ind = voxel_num_y * ind_x + ind_y;
+        //   int blocked_path_num = voxel_path_corr[ind].size();
+
+        //   for (int j = 0; j < blocked_path_num; j++) {
+        //     int path_id = voxel_path_corr[ind][j];
+        //     if (paths_group_id[path_id].front() == group_id) {
+        //       total_obstacles++;
+        //       break;
+        //     }
+        //   }
+      }
+      return total_obstacles;
+    }
+
     void local_planner_callback()
     {
       float p_relative_x = p_goal_base_->pose.position.x;
@@ -258,6 +304,7 @@ class LocalPlanner : public rclcpp::Node
                             vehicle_width / 2.0 * vehicle_width / 2.0);
 
       float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
+      RCLCPP_INFO(this->get_logger(), "Robot diameter: %f, angle offset: %f", diameter, angOffset);
 
       int planner_cloud_size = planner_cloud_->points.size();
       for (int i = 0; i < planner_cloud_size; i++) {
@@ -265,35 +312,37 @@ class LocalPlanner : public rclcpp::Node
         float distance = sqrt(point.x * point.x + point.y * point.y);
 
         if (distance < diameter) {
+          float ang_obs = atan2(point.y, point.x) * 180 / M_PI;
           RCLCPP_INFO(this->get_logger(), "Obstacle point too close to the robot.");
-          float angObs = atan2(point.y, point.x) * 180 / M_PI;
-          if (angObs > 0) {
-            if (minObsAngCCW > angObs - angOffset) minObsAngCCW = angObs - angOffset;
-            if (minObsAngCW < angObs + angOffset - 180) minObsAngCW = angObs + angOffset - 180;
+          RCLCPP_INFO(this->get_logger(), "Obstacle angle: %f", ang_obs);
+          if (ang_obs > 0) {
+            if (minObsAngCCW > ang_obs - angOffset) minObsAngCCW = ang_obs - angOffset;
+            if (minObsAngCW < ang_obs + angOffset - 180) minObsAngCW = ang_obs + angOffset - 180;
           } else {
-            if (minObsAngCW < angObs + angOffset) minObsAngCW = angObs + angOffset;
-            if (minObsAngCCW > angObs - angOffset + 180) minObsAngCCW = angObs - angOffset + 180;
+            if (minObsAngCW < ang_obs + angOffset) minObsAngCW = ang_obs + angOffset;
+            if (minObsAngCCW > ang_obs - angOffset + 180) minObsAngCCW = ang_obs - angOffset + 180;
           }
+          RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
         }
       }
 
       if (minObsAngCW > 0) minObsAngCW = 0;
       if (minObsAngCCW < 0) minObsAngCCW = 0;
-      RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
 
-      // obstacle avoidance logic
-      // for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
-      //   float rot_ang = 10 * rot_dir - 180;
-      //   float ang_diff = fabs(goal_angle - rot_ang);
-      //   if (ang_diff > 180) {
-      //     ang_diff = 360 - ang_diff;
-      //   }
+      for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
+        float rot_ang = 10 * rot_dir - 180;
+        float ang_diff = fabs(goal_angle - rot_ang);
+        if (ang_diff > 180) ang_diff = 360 - ang_diff;
 
-      //   // if the angle difference is larger than the threshold, skip this rotation direction
-      //   if (ang_diff > threshold_dir) {
-      //     continue;
-      //   }
-      // }
+        // if the angle difference is larger than the threshold, skip this rotation direction
+        if (ang_diff > threshold_dir) continue;
+
+        for (int group_id = 0; group_id < num_group; group_id++) {
+          // Count obstacles affecting this group
+          count_obstacles(rot_dir, group_id, planner_cloud_);
+        }
+
+      }
     }
 
     // For visualization only
