@@ -250,6 +250,7 @@ class LocalPlanner : public rclcpp::Node
     int count_obstacles(int rot_dir, int group_id,
                         pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
     {
+      // RCLCPP_INFO(this->get_logger(), "===== begin count_obstacles =====");
       int total_obstacles = 0;
       float rot_ang = (10.0 * rot_dir - 180.0) * M_PI / 180;
                   
@@ -267,22 +268,39 @@ class LocalPlanner : public rclcpp::Node
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
 
-        RCLCPP_INFO(this->get_logger(), "Point (%f, %f) in rotated frame is (%f, %f), voxel indices: (%d, %d)", 
-                   x, y, x2, y2, ix, iy);
+        // RCLCPP_INFO(this->get_logger(), "Point (%f, %f) in rotated frame is (%f, %f), voxel indices: (%d, %d)", x, y, x2, y2, ix, iy);
 
-        // if (ind_x >= 0 && ind_x < voxel_num_x && ind_y >= 0 && ind_y < voxel_num_y) {
-        //   int ind = voxel_num_y * ind_x + ind_y;
-        //   int blocked_path_num = voxel_path_corr[ind].size();
+        if (ix >= 0 && ix < num_voxels_x && iy >= 0 && iy < num_voxels_y) {
+          int ind = num_voxels_y * ix + iy;
 
-        //   for (int j = 0; j < blocked_path_num; j++) {
-        //     int path_id = voxel_path_corr[ind][j];
-        //     if (paths_group_id[path_id].front() == group_id) {
-        //       total_obstacles++;
-        //       break;
-        //     }
-        //   }
+          int blocked_path_num = voxel_path_corr[ind].size();
+          for (int j = 0; j < blocked_path_num; j++) {
+            int path_id = voxel_path_corr[ind][j];
+            if (paths_group_id[path_id].front() == group_id) {
+              total_obstacles++;
+              break; // only count once for each group
+            }
+          }
+        }
       }
+      // RCLCPP_INFO(this->get_logger(), "Total obstacles affecting rotation direction %d and group %d: %d", rot_dir, group_id, total_obstacles);
+      // RCLCPP_INFO(this->get_logger(), "===== end count_obstacles =====");
       return total_obstacles;
+    }
+
+    float calculate_path_score(int rot_dir, int group_id, float goal_angle, int obstacle_count, float end_dir)
+    {
+      // Convert rotation direction to angle
+      float rot_ang = 10 * rot_dir - 180;
+
+      // 1. Direction alignment score (0.0 to 1.0)
+      float diretion_diff = fabs(goal_angle - (rot_ang + end_dir));
+      if (diretion_diff > 360) diretion_diff -= 360;
+      if (diretion_diff > 180) diretion_diff = 360 - diretion_diff;
+      float direction_score = 1.0f - (diretion_diff / 180.0f);
+      RCLCPP_INFO(this->get_logger(), "Direction score for rotation %d and group %d: %f", rot_dir, group_id, direction_score);
+
+      return direction_score;
     }
 
     void local_planner_callback()
@@ -304,7 +322,7 @@ class LocalPlanner : public rclcpp::Node
                             vehicle_width / 2.0 * vehicle_width / 2.0);
 
       float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
-      RCLCPP_INFO(this->get_logger(), "Robot diameter: %f, angle offset: %f", diameter, angOffset);
+      // RCLCPP_INFO(this->get_logger(), "Robot diameter: %f, angle offset: %f", diameter, angOffset);
 
       int planner_cloud_size = planner_cloud_->points.size();
       for (int i = 0; i < planner_cloud_size; i++) {
@@ -313,8 +331,8 @@ class LocalPlanner : public rclcpp::Node
 
         if (distance < diameter) {
           float ang_obs = atan2(point.y, point.x) * 180 / M_PI;
-          RCLCPP_INFO(this->get_logger(), "Obstacle point too close to the robot.");
-          RCLCPP_INFO(this->get_logger(), "Obstacle angle: %f", ang_obs);
+          // RCLCPP_INFO(this->get_logger(), "Obstacle point too close to the robot.");
+          // RCLCPP_INFO(this->get_logger(), "Obstacle angle: %f", ang_obs);
           if (ang_obs > 0) {
             if (minObsAngCCW > ang_obs - angOffset) minObsAngCCW = ang_obs - angOffset;
             if (minObsAngCW < ang_obs + angOffset - 180) minObsAngCW = ang_obs + angOffset - 180;
@@ -322,7 +340,7 @@ class LocalPlanner : public rclcpp::Node
             if (minObsAngCW < ang_obs + angOffset) minObsAngCW = ang_obs + angOffset;
             if (minObsAngCCW > ang_obs - angOffset + 180) minObsAngCCW = ang_obs - angOffset + 180;
           }
-          RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
+          // RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
         }
       }
 
@@ -339,7 +357,27 @@ class LocalPlanner : public rclcpp::Node
 
         for (int group_id = 0; group_id < num_group; group_id++) {
           // Count obstacles affecting this group
-          count_obstacles(rot_dir, group_id, planner_cloud_);
+          int obstacle_count = count_obstacles(rot_dir, group_id, planner_cloud_);
+        
+          // Calculate average end direction for this group
+          float avg_end_dir = 0.0f;
+          int path_count = 0;
+          for (int path_id = 0; path_id < num_path; path_id++) {
+            if (paths_group_id[path_id].front() == group_id) {
+              // Calculate the end direction of the path
+              pcl::PointXYZI end_point = paths[path_id]->points.back();
+              float end_dir = atan2(end_point.y, end_point.x) * 180 / M_PI;
+              avg_end_dir += end_dir;
+              path_count++;
+            }
+          }
+          if (path_count > 0) avg_end_dir /= path_count;
+
+          // Calculate the score for this rotation direction and group
+          int score_index = rot_dir * num_group + group_id;
+
+          path_score[score_index] = calculate_path_score(rot_dir, group_id, goal_angle, obstacle_count, avg_end_dir);
+
         }
 
       }
@@ -398,20 +436,16 @@ class LocalPlanner : public rclcpp::Node
     }
 
     void debug_callback() {
-
-      // visualization for the filtered point cloud
       sensor_msgs::msg::PointCloud2 cropped_msg;
+      visualization_msgs::msg::MarkerArray path_marker_array;
+
+      // 1. visualization for the filtered point cloud
       pcl::toROSMsg(*planner_cloud_, cropped_msg);
       cropped_msg.header.frame_id = "base_link";
       cropped_msg.header.stamp = this->now();
       filtered_cloud_pub_->publish(cropped_msg);
 
-
-
-      // visualization for the paths
-      visualization_msgs::msg::MarkerArray path_marker_array;
-
-      // Add circle marker to visualize robot diameter
+      // 2. Add circle marker to visualize robot diameter
       visualization_msgs::msg::Marker circle_marker;
       circle_marker.header.frame_id = "base_link";
       circle_marker.header.stamp = this->now();
@@ -429,7 +463,6 @@ class LocalPlanner : public rclcpp::Node
       // Set circle size based on diameter
       float diameter = sqrt(vehicle_length/2.0 * vehicle_length/2.0 + 
                             vehicle_width/2.0 * vehicle_width/2.0);
-      RCLCPP_INFO(this->get_logger(), "Diameter of the robot: %f", diameter); 
       circle_marker.scale.x = diameter * 2;  // Diameter in x
       circle_marker.scale.y = diameter * 2;  // Diameter in y
       circle_marker.scale.z = 0.01;         // Thin height
@@ -442,36 +475,43 @@ class LocalPlanner : public rclcpp::Node
     
       circle_marker.lifetime = rclcpp::Duration::from_seconds(0);
     
-    // Add circle marker to marker array
-    path_marker_array.markers.push_back(circle_marker);
+      path_marker_array.markers.push_back(circle_marker);
 
-      for(int i = 0; i < num_path; i++){
-        visualization_msgs::msg::Marker path_marker;
-        path_marker.header.frame_id = "base_link";
-        path_marker.header.stamp = this->now();
-        path_marker.ns = "path_display";
-        path_marker.id = i;
-        path_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        path_marker.action = visualization_msgs::msg::Marker::ADD;
-        path_marker.pose.orientation.w = 1.0;
+      // 3. Add path markers to visualize the pre-generated paths
+      for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
+        float rot_ang = 10 * rot_dir - 180;
+        float ang_diff = fabs(goal_angle - rot_ang);
+        if (ang_diff > 180) ang_diff = 360 - ang_diff;
+        if (ang_diff > threshold_dir) continue;
 
-        path_marker.scale.x = 0.01; // Line width
-        path_marker.color.r = 1.0f;
-        path_marker.color.g = 1.0f;
-        path_marker.color.b = 0.0f;
-        path_marker.color.a = 1.0;
-        path_marker.lifetime = rclcpp::Duration::from_seconds(0);
+        for(int i = 0; i < num_path; i++){
+          visualization_msgs::msg::Marker path_marker;
+          path_marker.header.frame_id = "base_link";
+          path_marker.header.stamp = this->now();
+          path_marker.ns = "path_display";
+          path_marker.id = rot_dir * num_path + i;
+          path_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+          path_marker.action = visualization_msgs::msg::Marker::ADD;
+          path_marker.pose.orientation.w = 1.0;
 
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
-        for(size_t i = 0; i < cloud->size(); i++){
-          pcl::PointXYZI point = cloud->points[i];
-          geometry_msgs::msg::Point p;
-          p.x = point.x;
-          p.y = point.y;
-          p.z = point.z;
-          path_marker.points.push_back(p);
+          path_marker.scale.x = 0.01; // Line width
+          path_marker.color.r = 1.0f;
+          path_marker.color.g = 1.0f;
+          path_marker.color.b = 0.0f;
+          path_marker.color.a = 1.0;
+          path_marker.lifetime = rclcpp::Duration::from_seconds(0);
+
+          pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
+          for(size_t j = 0; j < cloud->size(); j++){
+            pcl::PointXYZI point = cloud->points[j];
+            geometry_msgs::msg::Point p;
+            p.x =  cos(rot_ang*M_PI/180) * point.x + sin(rot_ang * M_PI / 180) * point.y;
+            p.y = -sin(rot_ang*M_PI/180) * point.x + cos(rot_ang * M_PI / 180) * point.y;
+            p.z = point.z;
+            path_marker.points.push_back(p);
+          }
+          path_marker_array.markers.push_back(path_marker);
         }
-        path_marker_array.markers.push_back(path_marker);
       }
       marker_array_pub_->publish(path_marker_array);
     }
