@@ -250,7 +250,6 @@ class LocalPlanner : public rclcpp::Node
     int count_obstacles(int rot_dir, int group_id,
                         pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
     {
-      // RCLCPP_INFO(this->get_logger(), "===== begin count_obstacles =====");
       int total_obstacles = 0;
       float rot_ang = (10.0 * rot_dir - 180.0) * M_PI / 180;
                   
@@ -268,8 +267,6 @@ class LocalPlanner : public rclcpp::Node
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
 
-        // RCLCPP_INFO(this->get_logger(), "Point (%f, %f) in rotated frame is (%f, %f), voxel indices: (%d, %d)", x, y, x2, y2, ix, iy);
-
         if (ix >= 0 && ix < num_voxels_x && iy >= 0 && iy < num_voxels_y) {
           int ind = num_voxels_y * ix + iy;
 
@@ -283,24 +280,42 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
-      // RCLCPP_INFO(this->get_logger(), "Total obstacles affecting rotation direction %d and group %d: %d", rot_dir, group_id, total_obstacles);
-      // RCLCPP_INFO(this->get_logger(), "===== end count_obstacles =====");
       return total_obstacles;
     }
 
-    float calculate_path_score(int rot_dir, int group_id, float goal_angle, int obstacle_count, float end_dir)
+    float calculate_path_score(int rot_dir, int group_id, 
+                               int obstacle_count,
+                               float minObsAngCW, float minObsAngCCW,
+                               float goal_angle, float end_dir)
     {
       // Convert rotation direction to angle
       float rot_ang = 10 * rot_dir - 180;
 
-      // 1. Direction alignment score (0.0 to 1.0)
+      // 1. Obstacle clearance score (0.0 to 1.0)
+      float obstacle_score = fmax(0.0f, 1.0f - (obstacle_count / 20.0f));
+
+      // 2. Rotation safety score
+      float rotation_safety_score = 1.0f;
+      bool is_safe = (rot_ang * 180.0f / M_PI > minObsAngCW &&
+                      rot_ang * 180.0f / M_PI < minObsAngCCW);
+      if (!is_safe) rotation_safety_score = 0.0f;
+
+      // 3. Direction alignment score (0.0 to 1.0)
       float diretion_diff = fabs(goal_angle - (rot_ang + end_dir));
       if (diretion_diff > 360) diretion_diff -= 360;
       if (diretion_diff > 180) diretion_diff = 360 - diretion_diff;
       float direction_score = 1.0f - (diretion_diff / 180.0f);
-      RCLCPP_INFO(this->get_logger(), "Direction score for rotation %d and group %d: %f", rot_dir, group_id, direction_score);
 
-      return direction_score;
+      // 4. Rotation direction score
+      float rotation_score;
+
+
+      RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d", rot_dir, group_id);
+      RCLCPP_INFO(this->get_logger(), "Obstacle count: %d", obstacle_count);
+      RCLCPP_INFO(this->get_logger(), "Rotation safety score: %f", rotation_safety_score);
+      RCLCPP_INFO(this->get_logger(), "Direction score: %f", direction_score);
+
+      return obstacle_score * rotation_safety_score * direction_score;
     }
 
     void local_planner_callback()
@@ -376,7 +391,11 @@ class LocalPlanner : public rclcpp::Node
           // Calculate the score for this rotation direction and group
           int score_index = rot_dir * num_group + group_id;
 
-          path_score[score_index] = calculate_path_score(rot_dir, group_id, goal_angle, obstacle_count, avg_end_dir);
+          path_score[score_index] = calculate_path_score(rot_dir, group_id,  
+                                                         obstacle_count, 
+                                                         minObsAngCW, minObsAngCCW,
+                                                         goal_angle, avg_end_dir);
+
 
         }
 
