@@ -126,6 +126,8 @@ class LocalPlanner : public rclcpp::Node
     // planner other variables
     float goal_distance;
     float goal_angle;
+    float minObsAngCW;
+    float minObsAngCCW;
 
     // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
     float path_score[36 * num_group] = {0.0f};
@@ -245,6 +247,41 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
+    std::pair<float, float> calculateObstacleAngleBounds(
+        const pcl::PointCloud<pcl::PointXYZI>::Ptr& planner_cloud,
+        float vehicle_length,
+        float vehicle_width) {
+        
+        float minObsAngCW = -180.0;
+        float minObsAngCCW = 180.0;
+        float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + 
+                            vehicle_width / 2.0 * vehicle_width / 2.0);
+
+        float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
+
+        int planner_cloud_size = planner_cloud->points.size();
+        for (int i = 0; i < planner_cloud_size; i++) {
+            pcl::PointXYZI point = planner_cloud->points[i];
+            float distance = sqrt(point.x * point.x + point.y * point.y);
+
+            if (distance < diameter) {
+                float ang_obs = atan2(point.y, point.x) * 180 / M_PI;
+                if (ang_obs > 0) {
+                    if (minObsAngCCW > ang_obs - angOffset) minObsAngCCW = ang_obs - angOffset;
+                    if (minObsAngCW < ang_obs + angOffset - 180) minObsAngCW = ang_obs + angOffset - 180;
+                } else {
+                    if (minObsAngCW < ang_obs + angOffset) minObsAngCW = ang_obs + angOffset;
+                    if (minObsAngCCW > ang_obs - angOffset + 180) minObsAngCCW = ang_obs - angOffset + 180;
+                }
+            }
+        }
+
+        if (minObsAngCW > 0) minObsAngCW = 0;
+        if (minObsAngCCW < 0) minObsAngCCW = 0;
+
+        return std::make_pair(minObsAngCW, minObsAngCCW);
+    }
+
     // Count the number of obstacles in the planner cloud that are blocking the 
     // path that is in the specified rotation direction and group ID.
     int count_obstacles(int rot_dir, int group_id,
@@ -309,11 +346,10 @@ class LocalPlanner : public rclcpp::Node
       // 4. Rotation direction score
       float rotation_score;
 
-
-      RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d", rot_dir, group_id);
-      RCLCPP_INFO(this->get_logger(), "Obstacle count: %d", obstacle_count);
-      RCLCPP_INFO(this->get_logger(), "Rotation safety score: %f", rotation_safety_score);
-      RCLCPP_INFO(this->get_logger(), "Direction score: %f", direction_score);
+      // RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d", rot_dir, group_id);
+      // RCLCPP_INFO(this->get_logger(), "Obstacle count: %d", obstacle_count);
+      // RCLCPP_INFO(this->get_logger(), "Rotation safety score: %f", rotation_safety_score);
+      // RCLCPP_INFO(this->get_logger(), "Direction score: %f", direction_score);
 
       return obstacle_score * rotation_safety_score * direction_score;
     }
@@ -331,37 +367,11 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // calculate rotation obstacle bounds
-      float minObsAngCW = -180.0;
-      float minObsAngCCW = 180.0;
-      float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + 
-                            vehicle_width / 2.0 * vehicle_width / 2.0);
+      std::pair<float, float> obstacle_angle_bounds = calculateObstacleAngleBounds(planner_cloud_, vehicle_length, vehicle_width);
+      minObsAngCW = obstacle_angle_bounds.first;
+      minObsAngCCW = obstacle_angle_bounds.second;
 
-      float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
-      // RCLCPP_INFO(this->get_logger(), "Robot diameter: %f, angle offset: %f", diameter, angOffset);
-
-      int planner_cloud_size = planner_cloud_->points.size();
-      for (int i = 0; i < planner_cloud_size; i++) {
-        pcl::PointXYZI point = planner_cloud_->points[i];
-        float distance = sqrt(point.x * point.x + point.y * point.y);
-
-        if (distance < diameter) {
-          float ang_obs = atan2(point.y, point.x) * 180 / M_PI;
-          // RCLCPP_INFO(this->get_logger(), "Obstacle point too close to the robot.");
-          // RCLCPP_INFO(this->get_logger(), "Obstacle angle: %f", ang_obs);
-          if (ang_obs > 0) {
-            if (minObsAngCCW > ang_obs - angOffset) minObsAngCCW = ang_obs - angOffset;
-            if (minObsAngCW < ang_obs + angOffset - 180) minObsAngCW = ang_obs + angOffset - 180;
-          } else {
-            if (minObsAngCW < ang_obs + angOffset) minObsAngCW = ang_obs + angOffset;
-            if (minObsAngCCW > ang_obs - angOffset + 180) minObsAngCCW = ang_obs - angOffset + 180;
-          }
-          // RCLCPP_INFO(this->get_logger(), "Obstacle bounds: CW: %f, CCW: %f", minObsAngCW, minObsAngCCW);
-        }
-      }
-
-      if (minObsAngCW > 0) minObsAngCW = 0;
-      if (minObsAngCCW < 0) minObsAngCCW = 0;
-
+      // calculate path scores per group
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
         float rot_ang = 10 * rot_dir - 180;
         float ang_diff = fabs(goal_angle - rot_ang);
@@ -532,6 +542,44 @@ class LocalPlanner : public rclcpp::Node
           path_marker_array.markers.push_back(path_marker);
         }
       }
+
+      // Add lines for obstacle angle bounds
+      visualization_msgs::msg::Marker bound_line;
+      bound_line.header.frame_id = "base_link";
+      bound_line.header.stamp = this->now();
+      bound_line.ns = "obstacle_bounds";
+      bound_line.action = visualization_msgs::msg::Marker::ADD;
+      bound_line.type = visualization_msgs::msg::Marker::LINE_LIST;
+      bound_line.scale.x = 0.1;  // Line width
+      bound_line.color.r = 1.0;
+      bound_line.color.g = 0.0;
+      bound_line.color.b = 0.0;
+      bound_line.color.a = 1.0;
+
+      // Add CW bound line
+      geometry_msgs::msg::Point start_point;
+      start_point.x = 0.0;
+      start_point.y = 0.0;
+      start_point.z = 0.0;
+      bound_line.points.push_back(start_point);
+
+      geometry_msgs::msg::Point cw_point;
+      cw_point.x = 2.0 * cos(minObsAngCW * M_PI / 180.0);
+      cw_point.y = 2.0 * sin(minObsAngCW * M_PI / 180.0);
+      cw_point.z = 0.0;
+      bound_line.points.push_back(cw_point);
+
+      // Add CCW bound line
+      bound_line.points.push_back(start_point);
+
+      geometry_msgs::msg::Point ccw_point;
+      ccw_point.x = 2.0 * cos(minObsAngCCW * M_PI / 180.0);
+      ccw_point.y = 2.0 * sin(minObsAngCCW * M_PI / 180.0);
+      ccw_point.z = 0.0;
+      bound_line.points.push_back(ccw_point);
+
+      path_marker_array.markers.push_back(bound_line);
+
       marker_array_pub_->publish(path_marker_array);
     }
 };
