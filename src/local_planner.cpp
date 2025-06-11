@@ -136,6 +136,7 @@ class LocalPlanner : public rclcpp::Node
 
     // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
     float path_score[36 * num_group] = {0.0f};
+    int obstacle_counts[36 * num_group] = {0};  // Track obstacle counts per rotation and group
 
     // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
@@ -300,18 +301,25 @@ class LocalPlanner : public rclcpp::Node
         float x = planner_cloud->points[i].x;
         float y = planner_cloud->points[i].y;
 
-        float x2 =  cos(rot_ang) * x + sin(rot_ang) * y;
-        float y2 = -sin(rot_ang) * x + cos(rot_ang) * y;
+        float x2 = cos(rot_ang) * x - sin(rot_ang) * y;
+        float y2 = sin(rot_ang) * x + cos(rot_ang) * y;
+
+        // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "x: %f, y: %f --> x2: %f, y2: %f", x, y, x2, y2);
 
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
 
         if (ix >= 0 && ix < num_voxels_x && iy >= 0 && iy < num_voxels_y) {
           int ind = num_voxels_y * ix + iy;
+          // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "ind: %d", ind);
 
           int blocked_path_num = voxel_path_corr[ind].size();
+          // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "blocked_path_num: %d", blocked_path_num);
+
           for (int j = 0; j < blocked_path_num; j++) {
             int path_id = voxel_path_corr[ind][j];
+            // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "path_id: %d", path_id);
+
             if (paths_group_id[path_id].front() == group_id) {
               total_obstacles++;
               break; // only count once for each group
@@ -319,6 +327,8 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
+      RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d, Total obstacles: %d", rot_dir, group_id, total_obstacles);
+ 
       return total_obstacles;
     }
 
@@ -366,12 +376,15 @@ class LocalPlanner : public rclcpp::Node
       // reset path scores
       for (int i = 0; i < 36 * num_group; i++) {
         path_score[i] = 0.0f;
+        obstacle_counts[i] = 0;
       }
 
       // calculate rotation obstacle bounds
       std::pair<float, float> obstacle_angle_bounds = calculateObstacleAngleBounds(planner_cloud_, vehicle_length, vehicle_width);
       minObsAngCW = obstacle_angle_bounds.first;
       minObsAngCCW = obstacle_angle_bounds.second;
+
+      RCLCPP_INFO(this->get_logger(), "Total points: %ld", planner_cloud_->points.size());
 
       // calculate path scores per group
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
@@ -403,14 +416,13 @@ class LocalPlanner : public rclcpp::Node
           // Calculate the score for this rotation direction and group
           int score_index = rot_dir * num_group + group_id;
 
+          obstacle_counts[score_index] = obstacle_count;
           path_score[score_index] = calculate_path_score(rot_dir, group_id,  
                                                          obstacle_count, 
                                                          minObsAngCW, minObsAngCCW,
                                                          goal_angle, avg_end_dir);
 
-
         }
-
       }
     }
 
@@ -531,6 +543,14 @@ class LocalPlanner : public rclcpp::Node
           path_marker.color.b = 0.0f;
           path_marker.color.a = 1.0;
           path_marker.lifetime = rclcpp::Duration::from_seconds(0);
+
+          // Dim the path if there are obstacles
+          int score_index = rot_dir * num_group + paths_group_id[i].front();
+          if (obstacle_counts[score_index] > 0) {
+            path_marker.color.r = 0.5f;
+            path_marker.color.g = 0.5f;
+            path_marker.color.a = 0.2f;
+          }
 
           pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
           for(size_t j = 0; j < cloud->size(); j++){
