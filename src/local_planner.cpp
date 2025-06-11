@@ -84,6 +84,9 @@ class LocalPlanner : public rclcpp::Node
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
 
       debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::debug_callback, this));
+
+      num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
+      num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
     }
 
   private:
@@ -116,6 +119,8 @@ class LocalPlanner : public rclcpp::Node
     const float y_min = -3.0f;
     const float y_max =  3.0f;
     const float voxel_size = 0.05f;
+    int num_voxels_x;
+    int num_voxels_y;
     
     // static constexpr float voxel_size = 0.05;
     // static constexpr float offset_x = 3.2;
@@ -297,9 +302,6 @@ class LocalPlanner : public rclcpp::Node
 
         float x2 =  cos(rot_ang) * x + sin(rot_ang) * y;
         float y2 = -sin(rot_ang) * x + cos(rot_ang) * y;
-
-        const int num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
-        const int num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
 
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
@@ -560,10 +562,10 @@ class LocalPlanner : public rclcpp::Node
       geometry_msgs::msg::Point cw_start, cw_end;
       cw_start.x = -2.0 * cos(minObsAngCW * M_PI / 180.0);
       cw_start.y = -2.0 * sin(minObsAngCW * M_PI / 180.0);
-      cw_start.z = 0.0;
+      cw_start.z = 0.05;
       cw_end.x = 2.0 * cos(minObsAngCW * M_PI / 180.0);
       cw_end.y = 2.0 * sin(minObsAngCW * M_PI / 180.0);
-      cw_end.z = 0.0;
+      cw_end.z = 0.05;
       bound_line.points.push_back(cw_start);
       bound_line.points.push_back(cw_end);
 
@@ -571,10 +573,10 @@ class LocalPlanner : public rclcpp::Node
       geometry_msgs::msg::Point ccw_start, ccw_end;
       ccw_start.x = -2.0 * cos(minObsAngCCW * M_PI / 180.0);
       ccw_start.y = -2.0 * sin(minObsAngCCW * M_PI / 180.0);
-      ccw_start.z = 0.0;
+      ccw_start.z = 0.05;
       ccw_end.x = 2.0 * cos(minObsAngCCW * M_PI / 180.0);
       ccw_end.y = 2.0 * sin(minObsAngCCW * M_PI / 180.0);
-      ccw_end.z = 0.0;
+      ccw_end.z = 0.05;
       bound_line.points.push_back(ccw_start);
       bound_line.points.push_back(ccw_end);
 
