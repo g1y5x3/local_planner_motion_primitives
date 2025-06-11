@@ -58,22 +58,13 @@ class LocalPlanner : public rclcpp::Node
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-      // TODO: replaced with a goal pose subscriber under the /map frame and
-      // then convert it to be under /base_link frame
-      p_goal_base_->header.stamp = this->get_clock()->now();
-      p_goal_base_->header.frame_id = "base_link";
-      p_goal_base_->pose.position.x = 8.0;
-      p_goal_base_->pose.position.y = 0.0;
-      p_goal_base_->pose.position.z = 0.0;
-      p_goal_base_->pose.orientation.x = 0.0;
-      p_goal_base_->pose.orientation.y = 0.0;
-      p_goal_base_->pose.orientation.z = 0.0;
-      p_goal_base_->pose.orientation.w = 1.0;
-
+      // Create subscribers
       pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
+      goal_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
 
@@ -85,6 +76,11 @@ class LocalPlanner : public rclcpp::Node
 
       debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::debug_callback, this));
 
+      // Set a default value for goal pose
+      p_goal_base_->pose.position.x = 1.0f;
+      p_goal_base_->pose.position.y = 0.0f;
+
+      // calculate the number of voxels in the x and y directions
       num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
       num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
     }
@@ -121,12 +117,6 @@ class LocalPlanner : public rclcpp::Node
     const float voxel_size = 0.05f;
     int num_voxels_x;
     int num_voxels_y;
-    
-    // static constexpr float voxel_size = 0.05;
-    // static constexpr float offset_x = 3.2;
-    // static constexpr float offset_y = 4.5;
-    // static constexpr int voxel_num_x = int((offset_x / voxel_size) + 1);
-    // static constexpr int voxel_num_y = int(2 * (offset_y / voxel_size) + 1);
 
     // planner other variables
     float goal_distance;
@@ -156,6 +146,7 @@ class LocalPlanner : public rclcpp::Node
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_subscription_;
     rclcpp::TimerBase::SharedPtr planner_loop_;
     rclcpp::TimerBase::SharedPtr debug_loop_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -172,6 +163,19 @@ class LocalPlanner : public rclcpp::Node
         RCLCPP_WARN(get_logger(), "%s", ex.what());
         return;
       }
+    }
+
+    void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
+    {
+      // assign the goal pose to the p_goal_base_
+      p_goal_base_->pose.position.x = msg->pose.position.x;
+      p_goal_base_->pose.position.y = msg->pose.position.y;
+      p_goal_base_->pose.position.z = msg->pose.position.z;
+      p_goal_base_->pose.orientation.x = msg->pose.orientation.x;
+      p_goal_base_->pose.orientation.y = msg->pose.orientation.y;
+      p_goal_base_->pose.orientation.z = msg->pose.orientation.z;
+
+      RCLCPP_INFO(this->get_logger(), "Goal pose: x: %f, y: %f", p_goal_base_->pose.position.x, p_goal_base_->pose.position.y);
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -263,7 +267,8 @@ class LocalPlanner : public rclcpp::Node
         float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + 
                             vehicle_width / 2.0 * vehicle_width / 2.0);
 
-        float angOffset = atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
+        // TODO: make the weight of the angle offset a parameter
+        float angOffset = 0.5 * atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
 
         int planner_cloud_size = planner_cloud->points.size();
         for (int i = 0; i < planner_cloud_size; i++) {
@@ -288,23 +293,28 @@ class LocalPlanner : public rclcpp::Node
         return std::make_pair(minObsAngCW, minObsAngCCW);
     }
 
+    // Helper function
+    std::pair<float, float> rotate_point(float x, float y, float angle_deg) {
+        float angle_rad = angle_deg * M_PI / 180.0;
+        float x_rot = cos(angle_rad) * x - sin(angle_rad) * y;
+        float y_rot = sin(angle_rad) * x + cos(angle_rad) * y;
+        return std::make_pair(x_rot, y_rot);
+    }
+
     // Count the number of obstacles in the planner cloud that are blocking the 
     // path that is in the specified rotation direction and group ID.
     int count_obstacles(int rot_dir, int group_id,
                         pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
     {
       int total_obstacles = 0;
-      float rot_ang = (10.0 * rot_dir - 180.0) * M_PI / 180;
+      float rot_ang = (10.0 * rot_dir - 180.0);
                   
       int planner_cloud_size = planner_cloud->points.size();
       for (int i = 0; i < planner_cloud_size; i++) {
         float x = planner_cloud->points[i].x;
         float y = planner_cloud->points[i].y;
 
-        float x2 = cos(rot_ang) * x - sin(rot_ang) * y;
-        float y2 = sin(rot_ang) * x + cos(rot_ang) * y;
-
-        // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "x: %f, y: %f --> x2: %f, y2: %f", x, y, x2, y2);
+        auto [x2, y2] = rotate_point(x, y, rot_ang);
 
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
@@ -327,7 +337,7 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
-      RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d, Total obstacles: %d", rot_dir, group_id, total_obstacles);
+      // if (rot_dir == 9) RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Total obstacles: %d", rot_ang, group_id, total_obstacles);
  
       return total_obstacles;
     }
@@ -358,20 +368,16 @@ class LocalPlanner : public rclcpp::Node
       // 4. Rotation direction score
       float rotation_score;
 
-      // RCLCPP_INFO(this->get_logger(), "Rotation direction: %d, Group ID: %d", rot_dir, group_id);
-      // RCLCPP_INFO(this->get_logger(), "Obstacle count: %d", obstacle_count);
-      // RCLCPP_INFO(this->get_logger(), "Rotation safety score: %f", rotation_safety_score);
-      // RCLCPP_INFO(this->get_logger(), "Direction score: %f", direction_score);
-
       return obstacle_score * rotation_safety_score * direction_score;
     }
 
     void local_planner_callback()
     {
-      float p_relative_x = p_goal_base_->pose.position.x;
-      float p_relative_y = p_goal_base_->pose.position.y;
-      goal_distance = sqrt(p_relative_x*p_relative_x + p_relative_y*p_relative_y);
-      goal_angle = atan2(p_relative_y, p_relative_x) * 180 / M_PI;
+      goal_distance = sqrt(p_goal_base_->pose.position.x * p_goal_base_->pose.position.x + 
+                           p_goal_base_->pose.position.y * p_goal_base_->pose.position.y);
+
+      goal_angle = atan2(p_goal_base_->pose.position.y, p_goal_base_->pose.position.x) * 180 / M_PI;
+      // RCLCPP_INFO(this->get_logger(), "Goal distance: %f, Goal angle: %f", goal_distance, goal_angle);
 
       // reset path scores
       for (int i = 0; i < 36 * num_group; i++) {
@@ -384,7 +390,7 @@ class LocalPlanner : public rclcpp::Node
       minObsAngCW = obstacle_angle_bounds.first;
       minObsAngCCW = obstacle_angle_bounds.second;
 
-      RCLCPP_INFO(this->get_logger(), "Total points: %ld", planner_cloud_->points.size());
+      // RCLCPP_INFO(this->get_logger(), "Total points: %ld", planner_cloud_->points.size());
 
       // calculate path scores per group
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
@@ -556,8 +562,9 @@ class LocalPlanner : public rclcpp::Node
           for(size_t j = 0; j < cloud->size(); j++){
             pcl::PointXYZI point = cloud->points[j];
             geometry_msgs::msg::Point p;
-            p.x =  cos(rot_ang*M_PI/180) * point.x + sin(rot_ang * M_PI / 180) * point.y;
-            p.y = -sin(rot_ang*M_PI/180) * point.x + cos(rot_ang * M_PI / 180) * point.y;
+            auto [x_rot, y_rot] = rotate_point(point.x, point.y, rot_ang);
+            p.x = x_rot;
+            p.y = y_rot;
             p.z = point.z;
             path_marker.points.push_back(p);
           }
@@ -565,7 +572,7 @@ class LocalPlanner : public rclcpp::Node
         }
       }
 
-      // Add lines for obstacle angle bounds
+      // 4. Add lines for obstacle angle bounds
       visualization_msgs::msg::Marker bound_line;
       bound_line.header.frame_id = "base_link";
       bound_line.header.stamp = this->now();
@@ -573,29 +580,34 @@ class LocalPlanner : public rclcpp::Node
       bound_line.action = visualization_msgs::msg::Marker::ADD;
       bound_line.type = visualization_msgs::msg::Marker::LINE_LIST;
       bound_line.scale.x = 0.1;  // Line width
-      bound_line.color.r = 1.0;
+      bound_line.color.r = 0.6;
       bound_line.color.g = 0.0;
-      bound_line.color.b = 0.0;
+      bound_line.color.b = 0.4;
       bound_line.color.a = 1.0;
 
       // CW bound: line from -2m to +2m in the direction of minObsAngCW
-      geometry_msgs::msg::Point cw_start, cw_end;
-      cw_start.x = -2.0 * cos(minObsAngCW * M_PI / 180.0);
-      cw_start.y = -2.0 * sin(minObsAngCW * M_PI / 180.0);
+      geometry_msgs::msg::Point cw_start, cw_end, ccw_start, ccw_end;
+      
+      // CW bound
+      auto [x1, y1] = rotate_point(2.0, 0.0, minObsAngCW);
+      auto [x2, y2] = rotate_point(-2.0, 0.0, minObsAngCW);
+      cw_start.x = x1;
+      cw_start.y = y1;
       cw_start.z = 0.05;
-      cw_end.x = 2.0 * cos(minObsAngCW * M_PI / 180.0);
-      cw_end.y = 2.0 * sin(minObsAngCW * M_PI / 180.0);
+      cw_end.x = x2;
+      cw_end.y = y2;
       cw_end.z = 0.05;
       bound_line.points.push_back(cw_start);
       bound_line.points.push_back(cw_end);
 
-      // CCW bound: line from -2m to +2m in the direction of minObsAngCCW
-      geometry_msgs::msg::Point ccw_start, ccw_end;
-      ccw_start.x = -2.0 * cos(minObsAngCCW * M_PI / 180.0);
-      ccw_start.y = -2.0 * sin(minObsAngCCW * M_PI / 180.0);
+      // CCW bound
+      std::tie(x1, y1) = rotate_point(2.0, 0.0, minObsAngCCW);
+      std::tie(x2, y2) = rotate_point(-2.0, 0.0, minObsAngCCW);
+      ccw_start.x = x1;
+      ccw_start.y = y1;
       ccw_start.z = 0.05;
-      ccw_end.x = 2.0 * cos(minObsAngCCW * M_PI / 180.0);
-      ccw_end.y = 2.0 * sin(minObsAngCCW * M_PI / 180.0);
+      ccw_end.x = x2;
+      ccw_end.y = y2;
       ccw_end.z = 0.05;
       bound_line.points.push_back(ccw_start);
       bound_line.points.push_back(ccw_end);
