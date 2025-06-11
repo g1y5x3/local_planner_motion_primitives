@@ -556,27 +556,27 @@ class LocalPlanner : public rclcpp::Node
       bound_line.color.b = 0.0;
       bound_line.color.a = 1.0;
 
-      // Add CW bound line
-      geometry_msgs::msg::Point start_point;
-      start_point.x = 0.0;
-      start_point.y = 0.0;
-      start_point.z = 0.0;
-      bound_line.points.push_back(start_point);
+      // CW bound: line from -2m to +2m in the direction of minObsAngCW
+      geometry_msgs::msg::Point cw_start, cw_end;
+      cw_start.x = -2.0 * cos(minObsAngCW * M_PI / 180.0);
+      cw_start.y = -2.0 * sin(minObsAngCW * M_PI / 180.0);
+      cw_start.z = 0.0;
+      cw_end.x = 2.0 * cos(minObsAngCW * M_PI / 180.0);
+      cw_end.y = 2.0 * sin(minObsAngCW * M_PI / 180.0);
+      cw_end.z = 0.0;
+      bound_line.points.push_back(cw_start);
+      bound_line.points.push_back(cw_end);
 
-      geometry_msgs::msg::Point cw_point;
-      cw_point.x = 2.0 * cos(minObsAngCW * M_PI / 180.0);
-      cw_point.y = 2.0 * sin(minObsAngCW * M_PI / 180.0);
-      cw_point.z = 0.0;
-      bound_line.points.push_back(cw_point);
-
-      // Add CCW bound line
-      bound_line.points.push_back(start_point);
-
-      geometry_msgs::msg::Point ccw_point;
-      ccw_point.x = 2.0 * cos(minObsAngCCW * M_PI / 180.0);
-      ccw_point.y = 2.0 * sin(minObsAngCCW * M_PI / 180.0);
-      ccw_point.z = 0.0;
-      bound_line.points.push_back(ccw_point);
+      // CCW bound: line from -2m to +2m in the direction of minObsAngCCW
+      geometry_msgs::msg::Point ccw_start, ccw_end;
+      ccw_start.x = -2.0 * cos(minObsAngCCW * M_PI / 180.0);
+      ccw_start.y = -2.0 * sin(minObsAngCCW * M_PI / 180.0);
+      ccw_start.z = 0.0;
+      ccw_end.x = 2.0 * cos(minObsAngCCW * M_PI / 180.0);
+      ccw_end.y = 2.0 * sin(minObsAngCCW * M_PI / 180.0);
+      ccw_end.z = 0.0;
+      bound_line.points.push_back(ccw_start);
+      bound_line.points.push_back(ccw_end);
 
       path_marker_array.markers.push_back(bound_line);
 
