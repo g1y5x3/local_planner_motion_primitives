@@ -112,19 +112,30 @@ voxel_points = np.array(voxel_points)
 fig = plt.figure(figsize=(10, 12))
 ax = fig.add_subplot(111)
 ax.plot(voxel_points[:, 0], voxel_points[:, 1], marker='x', color='blue', linestyle='none')
-ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\nvoxel x num {num_voxels_x}\nvoxel y num {num_voxels_y}')
+
+highlight_idx = 1494
+ax.plot(voxel_points[highlight_idx, 0], voxel_points[highlight_idx, 1],
+        marker='o', color='red', markersize=12, markeredgewidth=2, label='Highlighted Voxel')
+
+ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\n'
+             f'voxel x num {num_voxels_x}\nvoxel y num {num_voxels_y}\n'
+             f'highlighted voxel index {highlight_idx} (x: {voxel_points[highlight_idx, 0]}, y: {voxel_points[highlight_idx, 1]})')
 ax.set_xlim([-0.2, 3.5])
 ax.set_ylim([-4.5, 4.5])
 plt.xlabel('X (m)')
 plt.ylabel('Y (m)')
+ax.legend()
 plt.show()
 
 #Collision checking (Memory Intensitve)
 # For every points in the path, check whether there is any point next to it within the radius in the voxel points
-search_radius = 0.45
+search_radius = 0.085
 path_points = np.vstack([path[:, :2] for path in path_all])
+print(path_points.shape)
 kdtree = cKDTree(path_points)
 indices = kdtree.query_ball_point(voxel_points, search_radius)
+print(indices.shape)
+print(indices[highlight_idx])
 
 # Plot voxels with correspondence
 fig = plt.figure(figsize=(10, 12))
