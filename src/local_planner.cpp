@@ -8,6 +8,7 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
 #include "tf2_ros/buffer.h"
@@ -63,19 +64,22 @@ class LocalPlanner : public rclcpp::Node
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // subscribers
-      pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
 
       // pcl point cloud filters initializations
       lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
-      lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+      lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
       // default value for goal pose
       p_goal_base_->pose.position.x = 0.0f;
       p_goal_base_->pose.position.y = 0.0f;
-      goal_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
+
+      // publishers
+      path_pub_ = this->create_publisher<nav_msgs::msg::Path>("path", 5);
 
       // main local path planning loop
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&LocalPlanner::local_planner_callback, this));
@@ -139,11 +143,12 @@ class LocalPlanner : public rclcpp::Node
 
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subcription_;
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_subcription_;
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_subscription_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_sub_;
     rclcpp::TimerBase::SharedPtr planner_loop_;
     rclcpp::TimerBase::SharedPtr debug_loop_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -361,11 +366,25 @@ class LocalPlanner : public rclcpp::Node
 
     void local_planner_callback()
     {
+      nav_msgs::msg::Path path;
+      float rot_ang;
+
       float x = p_goal_base_->pose.position.x;
       float y = p_goal_base_->pose.position.y;
+      float z = p_goal_base_->pose.position.z;
       goal_distance = sqrt(x*x + y*y);
       if (goal_distance < 0.1) {
         RCLCPP_INFO(this->get_logger(), "Goal reached!");
+
+        path.poses.resize(1);
+        path.poses[0].pose.position.x = 0;
+        path.poses[0].pose.position.y = 0;
+        path.poses[0].pose.position.z = 0;
+        path.header.stamp = this->now();
+        path.header.frame_id = "base_link";
+
+        path_pub_->publish(path);
+
         return;
       }
 
@@ -390,7 +409,7 @@ class LocalPlanner : public rclcpp::Node
 
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
 
-        float rot_ang = 10 * rot_dir - 180;
+        rot_ang = 10 * rot_dir - 180;
 
         // if the angle difference is larger than the threshold, skip this rotation direction
         float ang_diff = fabs(goal_angle - rot_ang);
@@ -433,9 +452,35 @@ class LocalPlanner : public rclcpp::Node
         }
       }
 
+      // Publish the path_starts
+      rot_ang = 10 * best_rot_dir - 180;
+      int path_length = paths_start[best_group_id]->points.size();
+      path.poses.resize(path_length);
+      for (int i = 0; i < path_length; i++) {
+        x = paths_start[best_group_id]->points[i].x;
+        y = paths_start[best_group_id]->points[i].y;
+        z = paths_start[best_group_id]->points[i].z;
+        float distance = sqrt(x*x + y*y);
+
+        if (distance <= distance_threshold && distance <= goal_distance) {
+          // Rotate the point based on the best rotation angle
+          auto [x_rot, y_rot] = rotate_point(x, y, rot_ang);
+          path.poses[i].pose.position.x = x_rot;
+          path.poses[i].pose.position.y = y_rot;
+          path.poses[i].pose.position.z = z;
+        } 
+        else {
+          path.poses.resize(i);
+          break;
+        }
+      }
+      path.header.stamp = this->now();
+      path.header.frame_id = "base_link";
+      path_pub_->publish(path);
+
       // Log the best path parameters
-      RCLCPP_INFO(this->get_logger(), "Best path - Score: %.4f, Rotation Angle: %d, Group: %d",
-                 best_score, 10*best_rot_dir-180, best_group_id);
+      RCLCPP_INFO(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %d, Group: %d",
+                 goal_distance, goal_angle, best_score, 10*best_rot_dir-180, best_group_id);
     }
 
     void read_path()
@@ -640,7 +685,7 @@ class LocalPlanner : public rclcpp::Node
 
       // CW bound
       auto [x1, y1] = rotate_point(2.0, 0.0, minObsAngCW);
-      auto [x2, y2] = rotate_point(-2.0, 0.0, minObsAngCW);
+      auto [x2, y2] = rotate_point(0.0, 0.0, minObsAngCW);
       cw_start.x = x1;
       cw_start.y = y1;
       cw_start.z = 0.05;
@@ -652,7 +697,7 @@ class LocalPlanner : public rclcpp::Node
 
       // CCW bound
       std::tie(x1, y1) = rotate_point(2.0, 0.0, minObsAngCCW);
-      std::tie(x2, y2) = rotate_point(-2.0, 0.0, minObsAngCCW);
+      std::tie(x2, y2) = rotate_point(0.0, 0.0, minObsAngCCW);
       ccw_start.x = x1;
       ccw_start.y = y1;
       ccw_start.z = 0.05;
