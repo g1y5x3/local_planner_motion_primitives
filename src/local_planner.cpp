@@ -55,53 +55,49 @@ class LocalPlanner : public rclcpp::Node
       voxel_path_corr.resize(voxel_num);
       this->read_path();
       this->read_voxel_path_correspondence();
+
       RCLCPP_INFO(this->get_logger(), "Number of voxels from paths pre-generation: %d, Voxel size: %f", voxel_num, voxel_size);
-
-      // pcl point cloud filters initializations
-      lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
-
-      // default value for goal pose
-      p_goal_base_->pose.position.x = 0.0f;
-      p_goal_base_->pose.position.y = 0.0f;
 
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-      // Create subscribers
+      // subscribers
       pose_subcription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
+
+      // pcl point cloud filters initializations
+      lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
       lidar_subcription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
+
+      // default value for goal pose
+      p_goal_base_->pose.position.x = 0.0f;
+      p_goal_base_->pose.position.y = 0.0f;
       goal_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
+      // main local path planning loop
       planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&LocalPlanner::local_planner_callback, this));
 
       // ADD A ROS PARAM FOR DEBUGGING
-
       filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
-
       debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(200), std::bind(&LocalPlanner::debug_callback, this));
     }
 
   private:
-
-    double dwz_voxel_size;  // lidar point cloud DWZ filter param
     double vehicle_length;
     double vehicle_width;
     double robot_body_radius;
-
-    // pregenerated paths (TODO: Load from a file maybe)
+    double dwz_voxel_size;  // lidar point cloud DWZ filter param
     std::string pregen_path_dir;
+
     std::vector<std::vector<int>> voxel_path_corr;
     // path and voxel parameters
     static const int num_group = 7;
     static const int num_path = 343;
  
-    // const int path_points_num = 103243;
-    // const int voxel_num = 7680;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path], paths_start[num_group];
     std::vector<int> paths_group_id[num_path];
