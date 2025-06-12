@@ -48,11 +48,14 @@ class LocalPlanner : public rclcpp::Node
       RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_length, vehicle_width);
      
       // load pre-generated path & voxel correspondence and calculate default voxel parameters
+      num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
+      num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
+      voxel_num = num_voxels_x * num_voxels_y;
+
       voxel_path_corr.resize(voxel_num);
       this->read_path();
       this->read_voxel_path_correspondence();
-      num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
-      num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
+      RCLCPP_INFO(this->get_logger(), "Number of voxels from paths pre-generation: %d, Voxel size: %f", voxel_num, voxel_size);
 
       // pcl point cloud filters initializations
       lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
@@ -97,11 +100,11 @@ class LocalPlanner : public rclcpp::Node
     static const int num_group = 7;
     static const int num_path = 343;
  
-    const int path_points_num = 103243;
-    const int voxel_num = 7680;
+    // const int path_points_num = 103243;
+    // const int voxel_num = 7680;
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path];
-    std::vector<int> paths_id[num_path], paths_group_id[num_path];
+    pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path], paths_start[num_group];
+    std::vector<int> paths_group_id[num_path];
 
     // planner parameters
     const int threshold_dir = 90;
@@ -116,6 +119,7 @@ class LocalPlanner : public rclcpp::Node
     const float voxel_size = 0.05f;
     int num_voxels_x;
     int num_voxels_y;
+    int voxel_num;
 
     // planner other variables
     float goal_distance;
@@ -126,6 +130,11 @@ class LocalPlanner : public rclcpp::Node
     // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
     float path_score[36 * num_group] = {0.0f};
     int obstacle_counts[36 * num_group] = {0};  // Track obstacle counts per rotation and group
+
+    // track best path
+    float best_score = 0.0f;
+    int best_rot_dir = 0;
+    int best_group_id = 0;
 
     // point clouds
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
@@ -302,8 +311,7 @@ class LocalPlanner : public rclcpp::Node
 
     // Count the number of obstacles in the planner cloud that are blocking the 
     // path that is in the specified rotation direction and group ID.
-    int count_obstacles(int rot_dir, int group_id,
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
+    int count_obstacles(int rot_dir, int group_id, pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
     {
       int total_obstacles = 0;
       float rot_ang = (10.0 * rot_dir - 180.0);
@@ -319,15 +327,10 @@ class LocalPlanner : public rclcpp::Node
 
         if (ix >= 0 && ix < num_voxels_x && iy >= 0 && iy < num_voxels_y) {
           int ind = num_voxels_y * ix + iy;
-          // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "ind: %d", ind);
 
           int blocked_path_num = voxel_path_corr[ind].size();
-          // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "blocked_path_num: %d", blocked_path_num);
-
           for (int j = 0; j < blocked_path_num; j++) {
             int path_id = voxel_path_corr[ind][j];
-            // if (rot_dir == 9 && group_id == 0) RCLCPP_INFO(this->get_logger(), "path_id: %d", path_id);
-
             if (paths_group_id[path_id].front() == group_id) {
               total_obstacles++;
               break; // only count once for each group
@@ -335,7 +338,7 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
-      // if (rot_dir == 9) RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Total obstacles: %d", rot_ang, group_id, total_obstacles);
+      // RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Total obstacles: %d", rot_ang, group_id, total_obstacles);
  
       return total_obstacles;
     }
@@ -343,7 +346,7 @@ class LocalPlanner : public rclcpp::Node
     float calculate_path_score(int rot_dir, int group_id, 
                                int obstacle_count,
                                float minObsAngCW, float minObsAngCCW,
-                               float goal_angle, float end_dir)
+                               float goal_angle, float avg_end_dir)
     {
       float rot_ang = 10 * rot_dir - 180;
 
@@ -355,7 +358,7 @@ class LocalPlanner : public rclcpp::Node
       float rotation_safety_score = is_safe ? 1.0f : 0.1f;
 
       // 3. Direction alignment score (0.0 to 1.0)
-      float diretion_diff = fabs(goal_angle - (rot_ang + end_dir));
+      float diretion_diff = fabs(goal_angle - (rot_ang + avg_end_dir));
       if (diretion_diff > 360) diretion_diff -= 360;
       if (diretion_diff > 180) diretion_diff = 360 - diretion_diff;
       float direction_score = 1.0f - (diretion_diff / 180.0f);
@@ -364,7 +367,7 @@ class LocalPlanner : public rclcpp::Node
       float rotation_score = rot_dir < 18 ? (fabs(rot_dir - 9) +1) / 9.0f : (fabs(rot_dir - 27) + 1) / 9.0f;
 
       float final_score = obstacle_score * rotation_safety_score * direction_score * rotation_score;
-      RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
+      // RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
       
       return final_score;
     }
@@ -392,6 +395,12 @@ class LocalPlanner : public rclcpp::Node
 
       // calculate path scores per group
       goal_angle = atan2(y, x) * 180 / M_PI;
+      
+      // Reset best score tracking
+      best_score = 0.0f;
+      best_rot_dir = 0;
+      best_group_id = 0;
+
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
 
         float rot_ang = 10 * rot_dir - 180;
@@ -428,8 +437,18 @@ class LocalPlanner : public rclcpp::Node
                                                          minObsAngCW, minObsAngCCW,
                                                          goal_angle, avg_end_dir);
 
+          // Update best score if current score is better
+          if (path_score[score_index] > best_score) {
+            best_score = path_score[score_index];
+            best_rot_dir = rot_dir;
+            best_group_id = group_id;
+          }
         }
       }
+
+      // Log the best path parameters
+      RCLCPP_INFO(this->get_logger(), "Best path - Score: %.4f, Rotation Angle: %d, Group: %d", 
+                 best_score, 10*best_rot_dir-180, best_group_id);
     }
 
     void read_path()
@@ -438,7 +457,7 @@ class LocalPlanner : public rclcpp::Node
 
       FILE *file_ptr = fopen(filename.c_str(), "r");
       if (file_ptr == NULL) {
-        RCLCPP_INFO(this->get_logger(), "Cannot read path file, exit.");
+        RCLCPP_INFO(this->get_logger(), "Cannot read pregen_path_all file, exit.");
         exit(1);
       }
 
@@ -456,7 +475,7 @@ class LocalPlanner : public rclcpp::Node
       int skip_count = 0;
       int skip_num = 43;
 
-      for (int i = 0; i < path_points_num; i++) {
+      while (true) {
         status_x = fscanf(file_ptr, "%f", &point.x);
         status_y = fscanf(file_ptr, "%f", &point.y);
         status_z = fscanf(file_ptr, "%f", &point.z);
@@ -464,22 +483,59 @@ class LocalPlanner : public rclcpp::Node
         status_path_group_id = fscanf(file_ptr, "%d", &path_group_id);
 
         if (status_x != 1 || status_y != 1 || status_z != 1 || status_path_id != 1 || status_path_group_id != 1) {
-          RCLCPP_INFO(this->get_logger(), "Error reading paths, exit.");
-          exit(1);
+          if (feof(file_ptr)) {
+            break;  // end of file reached
+          }
+          else {
+            RCLCPP_INFO(this->get_logger(), "Error reading paths, exit.");
+            exit(1);
+          }
         }
 
-        if (path_id >= 0 && path_id < path_points_num){
+        // if (path_id >= 0 && path_id < path_points_num){
           skip_count++;
           if (skip_count > skip_num) {
             paths[path_id]->push_back(point);
-            paths_id[path_id].push_back(path_id);
             paths_group_id[path_id].push_back(path_group_id);
             skip_count = 0;
           }
-        }
+        // }
       }
 
-      RCLCPP_INFO(this->get_logger(), "Successfully loaded paths!");
+      RCLCPP_INFO(this->get_logger(), "Successfully loaded paths and path groups!");
+      fclose(file_ptr);
+
+      // Read path start points
+      filename = pregen_path_dir + "/pregen_path_start.txt";
+      file_ptr = fopen(filename.c_str(), "r");
+      if (file_ptr == NULL) {
+        RCLCPP_INFO(this->get_logger(), "Cannot read pregen_path_start file, exit.");
+        exit(1);
+      }
+
+      for (int i = 0; i < num_group; i++){
+        paths_start[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
+      }
+
+      while (true) {
+        status_x = fscanf(file_ptr, "%f", &point.x);
+        status_y = fscanf(file_ptr, "%f", &point.y);
+        status_z = fscanf(file_ptr, "%f", &point.z);
+        status_path_group_id = fscanf(file_ptr, "%d", &path_group_id);
+
+        if (status_x != 1 || status_y != 1 || status_z != 1 || status_path_group_id != 1) {
+          if (feof(file_ptr)) {
+            break;  // end of file reached
+          }
+          else {
+            RCLCPP_INFO(this->get_logger(), "Error reading path starts, exit.");
+            exit(1);
+          }
+        }
+        paths_start[path_group_id]->push_back(point);
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Successfully loaded path start points!");
       fclose(file_ptr);
     }
 
@@ -551,7 +607,7 @@ class LocalPlanner : public rclcpp::Node
 
           // Dim the path if there are obstacles
           int score_index = rot_dir * num_group + paths_group_id[i].front();
-          if (obstacle_counts[score_index] > 0) {
+          if (obstacle_counts[score_index] > 5) {
             path_marker.color.r = 0.5f;
             path_marker.color.g = 0.5f;
             path_marker.color.a = 0.2f;
