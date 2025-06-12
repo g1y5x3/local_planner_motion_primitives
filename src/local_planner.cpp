@@ -313,8 +313,7 @@ class LocalPlanner : public rclcpp::Node
       for (int i = 0; i < planner_cloud_size; i++) {
         float x = planner_cloud->points[i].x;
         float y = planner_cloud->points[i].y;
-
-        auto [x2, y2] = rotate_point(x, y, rot_ang);
+        auto [x2, y2] = rotate_point(x, y, -rot_ang);
 
         int ix = static_cast<int>((x2 - x_min - 0.5f * voxel_size) / voxel_size);
         int iy = static_cast<int>((y2 - y_min - 0.5f * voxel_size) / voxel_size);
