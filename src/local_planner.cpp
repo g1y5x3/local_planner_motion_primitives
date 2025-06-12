@@ -32,10 +32,9 @@ class LocalPlanner : public rclcpp::Node
       p_robot_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
       p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
-      //Declare ROS parameters
+      // declare ROS parameters
       this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
       this->declare_parameter<double>("dwz_voxel_size", 0.05);
-      // Vehicle/Robot parameters
       this->declare_parameter<double>("vehicle_length", 1.55);
       this->declare_parameter<double>("vehicle_width", 0.95);
       this->declare_parameter<double>("robot_body_radius", 0.5);
@@ -43,16 +42,24 @@ class LocalPlanner : public rclcpp::Node
       this->get_parameter("vehicle_length", vehicle_length);
       this->get_parameter("vehicle_width", vehicle_width);
       this->get_parameter("robot_body_radius", robot_body_radius);
+      this->get_parameter("pregen_path_dir", pregen_path_dir);
+      this->get_parameter("dwz_voxel_size", dwz_voxel_size);
+
       RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_length, vehicle_width);
      
-      // load pre-generated path & voxel correspondence
-      this->get_parameter("pregen_path_dir", pregen_path_dir);
+      // load pre-generated path & voxel correspondence and calculate default voxel parameters
       voxel_path_corr.resize(voxel_num);
+      this->read_path();
       this->read_voxel_path_correspondence();
+      num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
+      num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
 
       // pcl point cloud filters initializations
-      this->get_parameter("dwz_voxel_size", dwz_voxel_size);
       lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
+
+      // default value for goal pose
+      p_goal_base_->pose.position.x = 0.0f;
+      p_goal_base_->pose.position.y = 0.0f;
 
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -66,23 +73,14 @@ class LocalPlanner : public rclcpp::Node
       goal_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
-      planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::local_planner_callback, this));
+      planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&LocalPlanner::local_planner_callback, this));
 
       // ADD A ROS PARAM FOR DEBUGGING
-      filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
 
-      this->read_path();
+      filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
 
-      debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&LocalPlanner::debug_callback, this));
-
-      // Set a default value for goal pose
-      p_goal_base_->pose.position.x = 1.0f;
-      p_goal_base_->pose.position.y = 0.0f;
-
-      // calculate the number of voxels in the x and y directions
-      num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
-      num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
+      debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(200), std::bind(&LocalPlanner::debug_callback, this));
     }
 
   private:
@@ -98,7 +96,8 @@ class LocalPlanner : public rclcpp::Node
     // path and voxel parameters
     static const int num_group = 7;
     static const int num_path = 343;
-    static const int path_points_num = 103243;
+ 
+    const int path_points_num = 103243;
     const int voxel_num = 7680;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path];
@@ -372,11 +371,13 @@ class LocalPlanner : public rclcpp::Node
 
     void local_planner_callback()
     {
-      goal_distance = sqrt(p_goal_base_->pose.position.x * p_goal_base_->pose.position.x + 
-                           p_goal_base_->pose.position.y * p_goal_base_->pose.position.y);
-
-      goal_angle = atan2(p_goal_base_->pose.position.y, p_goal_base_->pose.position.x) * 180 / M_PI;
-      // RCLCPP_INFO(this->get_logger(), "Goal distance: %f, Goal angle: %f", goal_distance, goal_angle);
+      float x = p_goal_base_->pose.position.x;
+      float y = p_goal_base_->pose.position.y;
+      goal_distance = sqrt(x*x + y*y);
+      if (goal_distance < 0.1) {
+        RCLCPP_INFO(this->get_logger(), "Goal reached!");
+        return;
+      }
 
       // reset path scores
       for (int i = 0; i < 36 * num_group; i++) {
@@ -389,15 +390,15 @@ class LocalPlanner : public rclcpp::Node
       minObsAngCW = obstacle_angle_bounds.first;
       minObsAngCCW = obstacle_angle_bounds.second;
 
-      // RCLCPP_INFO(this->get_logger(), "Total points: %ld", planner_cloud_->points.size());
-
       // calculate path scores per group
+      goal_angle = atan2(y, x) * 180 / M_PI;
       for (int rot_dir = 0; rot_dir < 36; rot_dir++) {
+
         float rot_ang = 10 * rot_dir - 180;
-        float ang_diff = fabs(goal_angle - rot_ang);
-        if (ang_diff > 180) ang_diff = 360 - ang_diff;
 
         // if the angle difference is larger than the threshold, skip this rotation direction
+        float ang_diff = fabs(goal_angle - rot_ang);
+        if (ang_diff > 180) ang_diff = 360 - ang_diff;
         if (ang_diff > threshold_dir) continue;
 
         for (int group_id = 0; group_id < num_group; group_id++) {
@@ -431,7 +432,6 @@ class LocalPlanner : public rclcpp::Node
       }
     }
 
-    // For visualization only
     void read_path()
     {
       std::string filename = pregen_path_dir + "/pregen_path_all.txt";
@@ -612,6 +612,26 @@ class LocalPlanner : public rclcpp::Node
       bound_line.points.push_back(ccw_end);
 
       path_marker_array.markers.push_back(bound_line);
+
+      // 5. Add goal pose visualization
+      // Goal position sphere
+      visualization_msgs::msg::Marker goal_sphere;
+      goal_sphere.header.frame_id = "base_link";
+      goal_sphere.header.stamp = this->now();
+      goal_sphere.ns = "goal_pose";
+      goal_sphere.id = 0;
+      goal_sphere.type = visualization_msgs::msg::Marker::SPHERE;
+      goal_sphere.action = visualization_msgs::msg::Marker::ADD;
+      goal_sphere.pose.position = p_goal_base_->pose.position;
+      goal_sphere.pose.orientation.w = 1.0;
+      goal_sphere.scale.x = 0.2;  // Sphere diameter
+      goal_sphere.scale.y = 0.2;
+      goal_sphere.scale.z = 0.2;
+      goal_sphere.color.r = 0.0f;
+      goal_sphere.color.g = 1.0f;
+      goal_sphere.color.b = 0.0f;
+      goal_sphere.color.a = 1.0f;
+      path_marker_array.markers.push_back(goal_sphere);
 
       marker_array_pub_->publish(path_marker_array);
     }
