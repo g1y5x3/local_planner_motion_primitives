@@ -345,17 +345,14 @@ class LocalPlanner : public rclcpp::Node
                                float minObsAngCW, float minObsAngCCW,
                                float goal_angle, float end_dir)
     {
-      // Convert rotation direction to angle
       float rot_ang = 10 * rot_dir - 180;
 
       // 1. Obstacle clearance score (0.0 to 1.0)
       float obstacle_score = fmax(0.0f, 1.0f - (obstacle_count / 20.0f));
 
       // 2. Rotation safety score
-      float rotation_safety_score = 1.0f;
-      bool is_safe = (rot_ang * 180.0f / M_PI > minObsAngCW &&
-                      rot_ang * 180.0f / M_PI < minObsAngCCW);
-      if (!is_safe) rotation_safety_score = 0.0f;
+      bool is_safe = (rot_ang > minObsAngCW && rot_ang < minObsAngCCW);
+      float rotation_safety_score = is_safe ? 1.0f : 0.1f;
 
       // 3. Direction alignment score (0.0 to 1.0)
       float diretion_diff = fabs(goal_angle - (rot_ang + end_dir));
@@ -363,10 +360,17 @@ class LocalPlanner : public rclcpp::Node
       if (diretion_diff > 180) diretion_diff = 360 - diretion_diff;
       float direction_score = 1.0f - (diretion_diff / 180.0f);
 
-      // 4. Rotation direction score
+      // 4. Rotation direction score, penalize close to 90% rotation
       float rotation_score;
+      if (rot_dir < 18)
+        rotation_score = (fabs(rot_dir - 9) + 1) / 9.0f; // 0 to 1 for 0 to 90 degrees
+      else
+        rotation_score = (fabs(rot_dir - 27) + 1) / 9.0f; // 0 to 1 for 90 to 180 degrees
 
-      return obstacle_score * rotation_safety_score * direction_score;
+      float final_score = obstacle_score * rotation_safety_score * direction_score * rotation_score;
+      RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
+      
+      return final_score;
     }
 
     void local_planner_callback()
