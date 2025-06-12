@@ -46,7 +46,7 @@ class LocalPlanner : public rclcpp::Node
       this->get_parameter("dwz_voxel_size", dwz_voxel_size);
 
       RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_length, vehicle_width);
-     
+
       // load pre-generated path & voxel correspondence and calculate default voxel parameters
       num_voxels_x = static_cast<int>(std::ceil((x_max - x_min) / voxel_size));
       num_voxels_y = static_cast<int>(std::ceil((y_max - y_min) / voxel_size));
@@ -99,10 +99,9 @@ class LocalPlanner : public rclcpp::Node
     static const int num_group = 7;
     pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path], paths_start[num_group];
     std::vector<int> paths_group_id[num_path];
-
     const float voxel_size = 0.05f;
     const float x_min = 0.0f;
-    const float x_max = 3.2f; 
+    const float x_max = 3.2f;
     const float y_min = -3.0f;
     const float y_max =  3.0f;
     int num_voxels_x;
@@ -111,12 +110,10 @@ class LocalPlanner : public rclcpp::Node
 
     // path planner variables
     const int threshold_dir = 90;
-    const double threshold_adjacent = 3.5;
     float goal_distance;
     float goal_angle;
     float minObsAngCW;
     float minObsAngCCW;
-
     int obstacle_counts[36 * num_group] = {0};  // Track obstacle counts per rotation and group
     float path_score[36 * num_group] = {0.0f};
     float best_score = 0.0f;
@@ -129,11 +126,11 @@ class LocalPlanner : public rclcpp::Node
     pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_dwz_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
-
     // lidar point cloud filtering
-    const double z_min = -0.45;
-    const double z_max =  0.65;
     double dwz_voxel_size;
+    const double z_threshold_min = -0.45;
+    const double z_threshold_max =  0.65;
+    const double distance_threshold = 3.5;
 
     // vehicle poses under different coordinate
     geometry_msgs::msg::PoseStamped::SharedPtr p_robot_map_;  // robot pose under the map frame
@@ -200,13 +197,13 @@ class LocalPlanner : public rclcpp::Node
         point = lidar_cloud_->points[i];
         float distance = sqrt((point.x * point.x) + (point.y * point.y));
 
-        // filter out the point that's either 
+        // filter out the point that's either
         // 1. from the robot body
         // 2. further than the pre-generated path
         // 3. height exceeds the threshold
         if (distance > robot_body_radius &&
-            distance < threshold_adjacent && 
-            point.z > z_min && point.z < z_max) {
+            distance < distance_threshold &&
+            point.z > z_threshold_min && point.z < z_threshold_max) {
           lidar_cloud_crop_->push_back(point);
         }
       }
@@ -257,15 +254,15 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
-    std::pair<float, float> calculateObstacleAngleBounds(
+    std::pair<float, float> calculate_obs_ang_bounds(
         const pcl::PointCloud<pcl::PointXYZI>::Ptr& planner_cloud,
         float vehicle_length,
         float vehicle_width) {
-        
+
         float minObsAngCW = -180.0;
         float minObsAngCCW = 180.0;
-        float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 + 
-                            vehicle_width / 2.0 * vehicle_width / 2.0);
+        float diameter = sqrt(vehicle_length / 2.0 * vehicle_length / 2.0 +
+                              vehicle_width  / 2.0 * vehicle_width  / 2.0);
 
         // TODO: make the weight of the angle offset a parameter
         float angOffset = 0.5 * atan2(vehicle_width, vehicle_length) * 180.0/ M_PI;
@@ -301,13 +298,13 @@ class LocalPlanner : public rclcpp::Node
         return std::make_pair(x_rot, y_rot);
     }
 
-    // Count the number of obstacles in the planner cloud that are blocking the 
+    // Count the number of obstacles in the planner cloud that are blocking the
     // path that is in the specified rotation direction and group ID.
     int count_obstacles(int rot_dir, int group_id, pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud)
     {
       int total_obstacles = 0;
       float rot_ang = (10.0 * rot_dir - 180.0);
-                  
+
       int planner_cloud_size = planner_cloud->points.size();
       for (int i = 0; i < planner_cloud_size; i++) {
         float x = planner_cloud->points[i].x;
@@ -319,7 +316,6 @@ class LocalPlanner : public rclcpp::Node
 
         if (ix >= 0 && ix < num_voxels_x && iy >= 0 && iy < num_voxels_y) {
           int ind = num_voxels_y * ix + iy;
-
           int blocked_path_num = voxel_path_corr[ind].size();
           for (int j = 0; j < blocked_path_num; j++) {
             int path_id = voxel_path_corr[ind][j];
@@ -330,12 +326,11 @@ class LocalPlanner : public rclcpp::Node
           }
         }
       }
-      // RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Total obstacles: %d", rot_ang, group_id, total_obstacles);
- 
+
       return total_obstacles;
     }
 
-    float calculate_path_score(int rot_dir, int group_id, 
+    float calculate_path_score(int rot_dir, int group_id,
                                int obstacle_count,
                                float minObsAngCW, float minObsAngCCW,
                                float goal_angle, float avg_end_dir)
@@ -360,7 +355,7 @@ class LocalPlanner : public rclcpp::Node
 
       float final_score = obstacle_score * rotation_safety_score * direction_score * rotation_score;
       // RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
-      
+
       return final_score;
     }
 
@@ -381,13 +376,13 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // calculate rotation obstacle bounds
-      std::pair<float, float> obstacle_angle_bounds = calculateObstacleAngleBounds(planner_cloud_, vehicle_length, vehicle_width);
+      std::pair<float, float> obstacle_angle_bounds = calculate_obs_ang_bounds(planner_cloud_, vehicle_length, vehicle_width);
       minObsAngCW = obstacle_angle_bounds.first;
       minObsAngCCW = obstacle_angle_bounds.second;
 
       // calculate path scores per group
       goal_angle = atan2(y, x) * 180 / M_PI;
-      
+
       // Reset best score tracking
       best_score = 0.0f;
       best_rot_dir = 0;
@@ -405,7 +400,7 @@ class LocalPlanner : public rclcpp::Node
         for (int group_id = 0; group_id < num_group; group_id++) {
           // Count obstacles affecting this group
           int obstacle_count = count_obstacles(rot_dir, group_id, planner_cloud_);
-        
+
           // Calculate average end direction for this group
           float avg_end_dir = 0.0f;
           int path_count = 0;
@@ -424,8 +419,8 @@ class LocalPlanner : public rclcpp::Node
           int score_index = rot_dir * num_group + group_id;
 
           obstacle_counts[score_index] = obstacle_count;
-          path_score[score_index] = calculate_path_score(rot_dir, group_id,  
-                                                         obstacle_count, 
+          path_score[score_index] = calculate_path_score(rot_dir, group_id,
+                                                         obstacle_count,
                                                          minObsAngCW, minObsAngCCW,
                                                          goal_angle, avg_end_dir);
 
@@ -439,7 +434,7 @@ class LocalPlanner : public rclcpp::Node
       }
 
       // Log the best path parameters
-      RCLCPP_INFO(this->get_logger(), "Best path - Score: %.4f, Rotation Angle: %d, Group: %d", 
+      RCLCPP_INFO(this->get_logger(), "Best path - Score: %.4f, Rotation Angle: %d, Group: %d",
                  best_score, 10*best_rot_dir-180, best_group_id);
     }
 
@@ -532,6 +527,11 @@ class LocalPlanner : public rclcpp::Node
     }
 
     void debug_callback() {
+
+      if (goal_distance < 0.1) {
+        return;
+      }
+
       sensor_msgs::msg::PointCloud2 cropped_msg;
       visualization_msgs::msg::MarkerArray path_marker_array;
 
@@ -549,7 +549,7 @@ class LocalPlanner : public rclcpp::Node
       circle_marker.id = num_path + 1;  // Ensure unique ID
       circle_marker.type = visualization_msgs::msg::Marker::CYLINDER;
       circle_marker.action = visualization_msgs::msg::Marker::ADD;
-    
+
       // Set circle position at robot center
       circle_marker.pose.position.x = 0.0;
       circle_marker.pose.position.y = 0.0;
@@ -557,20 +557,17 @@ class LocalPlanner : public rclcpp::Node
       circle_marker.pose.orientation.w = 1.0;
 
       // Set circle size based on diameter
-      float diameter = sqrt(vehicle_length/2.0 * vehicle_length/2.0 + 
+      float diameter = sqrt(vehicle_length/2.0 * vehicle_length/2.0 +
                             vehicle_width/2.0 * vehicle_width/2.0);
       circle_marker.scale.x = diameter * 2;  // Diameter in x
       circle_marker.scale.y = diameter * 2;  // Diameter in y
-      circle_marker.scale.z = 0.01;         // Thin height
-
-      // Set circle color (semi-transparent red)
+      circle_marker.scale.z = 0.01;          // Thin height
       circle_marker.color.r = 1.0f;
       circle_marker.color.g = 0.0f;
       circle_marker.color.b = 0.0f;
       circle_marker.color.a = 0.3f;
-    
       circle_marker.lifetime = rclcpp::Duration::from_seconds(0);
-    
+
       path_marker_array.markers.push_back(circle_marker);
 
       // 3. Add path markers to visualize the pre-generated paths
@@ -594,7 +591,7 @@ class LocalPlanner : public rclcpp::Node
           path_marker.color.r = 1.0f;
           path_marker.color.g = 1.0f;
           path_marker.color.b = 0.0f;
-          path_marker.color.a = 1.0;
+          path_marker.color.a = 0.5f;
           path_marker.lifetime = rclcpp::Duration::from_seconds(0);
 
           // Dim the path if there are obstacles
@@ -602,7 +599,13 @@ class LocalPlanner : public rclcpp::Node
           if (obstacle_counts[score_index] > 5) {
             path_marker.color.r = 0.5f;
             path_marker.color.g = 0.5f;
-            path_marker.color.a = 0.2f;
+            path_marker.color.a = 0.1f;
+          }
+          if (rot_dir == best_rot_dir && paths_group_id[i].front() == best_group_id) {
+            path_marker.scale.x = 0.02; // Line width
+            path_marker.color.r = 1.0f;
+            path_marker.color.g = 0.5f;
+            path_marker.color.b = 0.0f;
           }
 
           pcl::PointCloud<pcl::PointXYZI>::Ptr cloud = paths[i];
@@ -612,7 +615,7 @@ class LocalPlanner : public rclcpp::Node
             auto [x_rot, y_rot] = rotate_point(point.x, point.y, rot_ang);
             p.x = x_rot;
             p.y = y_rot;
-            p.z = point.z;
+            p.z = (rot_dir == best_rot_dir && paths_group_id[i].front() == best_group_id) ? 0.1 : point.z;
             path_marker.points.push_back(p);
           }
           path_marker_array.markers.push_back(path_marker);
@@ -634,7 +637,7 @@ class LocalPlanner : public rclcpp::Node
 
       // CW bound: line from -2m to +2m in the direction of minObsAngCW
       geometry_msgs::msg::Point cw_start, cw_end, ccw_start, ccw_end;
-      
+
       // CW bound
       auto [x1, y1] = rotate_point(2.0, 0.0, minObsAngCW);
       auto [x2, y2] = rotate_point(-2.0, 0.0, minObsAngCW);
