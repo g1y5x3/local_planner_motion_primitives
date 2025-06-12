@@ -361,11 +361,7 @@ class LocalPlanner : public rclcpp::Node
       float direction_score = 1.0f - (diretion_diff / 180.0f);
 
       // 4. Rotation direction score, penalize close to 90% rotation
-      float rotation_score;
-      if (rot_dir < 18)
-        rotation_score = (fabs(rot_dir - 9) + 1) / 9.0f; // 0 to 1 for 0 to 90 degrees
-      else
-        rotation_score = (fabs(rot_dir - 27) + 1) / 9.0f; // 0 to 1 for 90 to 180 degrees
+      float rotation_score = rot_dir < 18 ? (fabs(rot_dir - 9) +1) / 9.0f : (fabs(rot_dir - 27) + 1) / 9.0f;
 
       float final_score = obstacle_score * rotation_safety_score * direction_score * rotation_score;
       RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
