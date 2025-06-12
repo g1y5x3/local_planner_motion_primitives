@@ -87,47 +87,38 @@ class LocalPlanner : public rclcpp::Node
     }
 
   private:
+    // vehicle info
     double vehicle_length;
     double vehicle_width;
     double robot_body_radius;
-    double dwz_voxel_size;  // lidar point cloud DWZ filter param
-    std::string pregen_path_dir;
 
-    std::vector<std::vector<int>> voxel_path_corr;
     // path and voxel parameters
-    static const int num_group = 7;
+    std::string pregen_path_dir;
+    std::vector<std::vector<int>> voxel_path_corr;
     static const int num_path = 343;
- 
-
+    static const int num_group = 7;
     pcl::PointCloud<pcl::PointXYZI>::Ptr paths[num_path], paths_start[num_group];
     std::vector<int> paths_group_id[num_path];
 
-    // planner parameters
-    const int threshold_dir = 90;
-    const double threshold_adjacent = 3.5;
-    const double z_min = -0.45;
-    const double z_max =  0.65;
-    const float search_radius = 0.45;
+    const float voxel_size = 0.05f;
     const float x_min = 0.0f;
     const float x_max = 3.2f; 
     const float y_min = -3.0f;
     const float y_max =  3.0f;
-    const float voxel_size = 0.05f;
     int num_voxels_x;
     int num_voxels_y;
     int voxel_num;
 
-    // planner other variables
+    // path planner variables
+    const int threshold_dir = 90;
+    const double threshold_adjacent = 3.5;
     float goal_distance;
     float goal_angle;
     float minObsAngCW;
     float minObsAngCCW;
 
-    // 36 represents discrete rotation directions (10 degree each, covering 360 degrees)
-    float path_score[36 * num_group] = {0.0f};
     int obstacle_counts[36 * num_group] = {0};  // Track obstacle counts per rotation and group
-
-    // track best path
+    float path_score[36 * num_group] = {0.0f};
     float best_score = 0.0f;
     int best_rot_dir = 0;
     int best_group_id = 0;
@@ -139,7 +130,12 @@ class LocalPlanner : public rclcpp::Node
     pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
 
-    // poses to be tracked
+    // lidar point cloud filtering
+    const double z_min = -0.45;
+    const double z_max =  0.65;
+    double dwz_voxel_size;
+
+    // vehicle poses under different coordinate
     geometry_msgs::msg::PoseStamped::SharedPtr p_robot_map_;  // robot pose under the map frame
     geometry_msgs::msg::PoseStamped::SharedPtr p_goal_map_;   // goal pose under the map frame
     geometry_msgs::msg::PoseStamped::SharedPtr p_goal_base_;  // goal pose under the base_link frame
