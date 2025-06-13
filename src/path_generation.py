@@ -161,9 +161,6 @@ np.savetxt('pregen_path_start.txt', array, fmt="%f %f %f %d", delimiter='')
 array = np.vstack(path_all)
 np.savetxt('pregen_path_all.txt', array, fmt="%f %f %f %d %d", delimiter='')
 
-array = np.vstack(path_list)
-np.savetxt('pregen_path_list.txt', array, fmt="%f %f %f %d %d", delimiter='')
-
 # Each row starting with an index represents a voxel, the following indices are the generated paths
 # that pass through the voxel
 with open('pregen_voxel_path_corr.txt', 'w') as f:
