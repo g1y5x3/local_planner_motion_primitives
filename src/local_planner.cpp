@@ -578,12 +578,21 @@ class LocalPlanner : public rclcpp::Node
 
     void debug_callback() {
 
-      // FIX THIS LOGIC LATER
-      // if (goal_distance < 0.1) {
-      //   return;
-      // }
-
       rclcpp::Time current_stamp = this->now();
+
+      std::string target_frame = "map";
+      std::string source_frame = "base_link";
+
+      try {
+        // Wait for the transform to be available
+        if (!tf_buffer_->canTransform(source_frame, target_frame, current_stamp, rclcpp::Duration::from_seconds(0.5))) {
+          RCLCPP_WARN(this->get_logger(), "Transform from %s to %s not available", source_frame.c_str(), target_frame.c_str());
+          return;
+        }
+      } catch (tf2::TransformException &ex) {
+        RCLCPP_WARN(this->get_logger(), "Transform error: %s", ex.what());
+        return;
+      }
 
       sensor_msgs::msg::PointCloud2 cropped_msg;
       visualization_msgs::msg::MarkerArray path_marker_array;
