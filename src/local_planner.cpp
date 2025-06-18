@@ -80,14 +80,9 @@ class LocalPlanner : public rclcpp::Node
 
       // publishers
       path_pub_ = this->create_publisher<nav_msgs::msg::Path>("path", 5);
-
-      // main local path planning loop
-      planner_loop_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&LocalPlanner::local_planner_callback, this));
-
       // ADD A ROS PARAM FOR DEBUGGING
       filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
-      debug_loop_ = this->create_wall_timer(std::chrono::milliseconds(200), std::bind(&LocalPlanner::debug_callback, this));
     }
 
   private:
@@ -149,8 +144,6 @@ class LocalPlanner : public rclcpp::Node
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_sub_;
-    rclcpp::TimerBase::SharedPtr planner_loop_;
-    rclcpp::TimerBase::SharedPtr debug_loop_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
 
@@ -169,15 +162,23 @@ class LocalPlanner : public rclcpp::Node
 
     void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
-      // assign the goal pose to the p_goal_base_
-      p_goal_base_->pose.position.x = msg->pose.position.x;
-      p_goal_base_->pose.position.y = msg->pose.position.y;
-      p_goal_base_->pose.position.z = msg->pose.position.z;
-      p_goal_base_->pose.orientation.x = msg->pose.orientation.x;
-      p_goal_base_->pose.orientation.y = msg->pose.orientation.y;
-      p_goal_base_->pose.orientation.z = msg->pose.orientation.z;
+      // check whether the msg received is under the /map frame
+      if (msg->header.frame_id != "map") {
+        RCLCPP_WARN(this->get_logger(), "Goal pose is not under the /map frame, please publish goal pose under the /map frame.");
+        return;
+      }
+      else {
+        // convert the goal pose from /map frame to /base_link frame
+        try {
+          p_goal_base_->header.frame_id = "base_link";
+          tf_buffer_->transform(*msg, *p_goal_base_, "base_link", tf2::durationFromSec(0.1));
+          RCLCPP_INFO(this->get_logger(), "Goal pose: x: %f, y: %f", p_goal_base_->pose.position.x, p_goal_base_->pose.position.y);
+        } catch (tf2::TransformException &ex) {
+          RCLCPP_WARN(get_logger(), "%s", ex.what());
+          return;
+        }
 
-      RCLCPP_INFO(this->get_logger(), "Goal pose: x: %f, y: %f", p_goal_base_->pose.position.x, p_goal_base_->pose.position.y);
+      }
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -217,6 +218,10 @@ class LocalPlanner : public rclcpp::Node
       planner_cloud_->clear();
       lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
       lidar_filter_DWZ.filter(*planner_cloud_);
+
+      // planning and debug functions
+      this->local_planner_callback();
+      this->debug_callback();
     }
 
     void read_voxel_path_correspondence()
@@ -573,9 +578,12 @@ class LocalPlanner : public rclcpp::Node
 
     void debug_callback() {
 
-      if (goal_distance < 0.1) {
-        return;
-      }
+      // FIX THIS LOGIC LATER
+      // if (goal_distance < 0.1) {
+      //   return;
+      // }
+
+      rclcpp::Time current_stamp = this->now();
 
       sensor_msgs::msg::PointCloud2 cropped_msg;
       visualization_msgs::msg::MarkerArray path_marker_array;
@@ -583,13 +591,13 @@ class LocalPlanner : public rclcpp::Node
       // 1. visualization for the filtered point cloud
       pcl::toROSMsg(*planner_cloud_, cropped_msg);
       cropped_msg.header.frame_id = "base_link";
-      cropped_msg.header.stamp = this->now();
+      cropped_msg.header.stamp = current_stamp;
       filtered_cloud_pub_->publish(cropped_msg);
 
       // 2. Add circle marker to visualize robot diameter
       visualization_msgs::msg::Marker circle_marker;
       circle_marker.header.frame_id = "base_link";
-      circle_marker.header.stamp = this->now();
+      circle_marker.header.stamp = current_stamp;
       circle_marker.ns = "robot_diameter";
       circle_marker.id = num_path + 1;  // Ensure unique ID
       circle_marker.type = visualization_msgs::msg::Marker::CYLINDER;
@@ -625,7 +633,7 @@ class LocalPlanner : public rclcpp::Node
         for(int i = 0; i < num_path; i++){
           visualization_msgs::msg::Marker path_marker;
           path_marker.header.frame_id = "base_link";
-          path_marker.header.stamp = this->now();
+          path_marker.header.stamp = current_stamp;
           path_marker.ns = "path_display";
           path_marker.id = rot_dir * num_path + i;
           path_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
@@ -670,7 +678,7 @@ class LocalPlanner : public rclcpp::Node
       // 4. Add lines for obstacle angle bounds
       visualization_msgs::msg::Marker bound_line;
       bound_line.header.frame_id = "base_link";
-      bound_line.header.stamp = this->now();
+      bound_line.header.stamp = current_stamp;
       bound_line.ns = "obstacle_bounds";
       bound_line.action = visualization_msgs::msg::Marker::ADD;
       bound_line.type = visualization_msgs::msg::Marker::LINE_LIST;
@@ -713,7 +721,7 @@ class LocalPlanner : public rclcpp::Node
       // Goal position sphere
       visualization_msgs::msg::Marker goal_sphere;
       goal_sphere.header.frame_id = "base_link";
-      goal_sphere.header.stamp = this->now();
+      goal_sphere.header.stamp = current_stamp;
       goal_sphere.ns = "goal_pose";
       goal_sphere.id = 0;
       goal_sphere.type = visualization_msgs::msg::Marker::SPHERE;
