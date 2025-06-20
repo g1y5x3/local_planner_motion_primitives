@@ -194,6 +194,16 @@ class LocalPlanner : public rclcpp::Node
       }
       pcl::fromROSMsg(*msg_base, *lidar_cloud_);
 
+      this->filter_point_cloud();
+
+      // planning and debug functions
+      this->local_planner_callback();
+
+      this->debug_callback();
+    }
+
+    void filter_point_cloud()
+    {
       // apply distance and height based filtering
       lidar_cloud_crop_->clear();
       int num_points = lidar_cloud_->points.size();
@@ -218,10 +228,6 @@ class LocalPlanner : public rclcpp::Node
       planner_cloud_->clear();
       lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
       lidar_filter_DWZ.filter(*planner_cloud_);
-
-      // planning and debug functions
-      this->local_planner_callback();
-      this->debug_callback();
     }
 
     void read_voxel_path_correspondence()
@@ -340,7 +346,7 @@ class LocalPlanner : public rclcpp::Node
       return total_obstacles;
     }
 
-    float calculate_path_score(int rot_dir, int group_id,
+    float calculate_path_score(int rot_dir,
                                int obstacle_count,
                                float minObsAngCW, float minObsAngCCW,
                                float goal_angle, float avg_end_dir)
@@ -443,7 +449,7 @@ class LocalPlanner : public rclcpp::Node
           int score_index = rot_dir * num_group + group_id;
 
           obstacle_counts[score_index] = obstacle_count;
-          path_score[score_index] = calculate_path_score(rot_dir, group_id,
+          path_score[score_index] = calculate_path_score(rot_dir,
                                                          obstacle_count,
                                                          minObsAngCW, minObsAngCCW,
                                                          goal_angle, avg_end_dir);
