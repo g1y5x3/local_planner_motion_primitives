@@ -31,6 +31,7 @@ class LocalPlanner : public rclcpp::Node
       lidar_cloud_dwz_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       planner_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
       p_robot_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
+      p_goal_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
       p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
       // declare ROS parameters
@@ -73,8 +74,8 @@ class LocalPlanner : public rclcpp::Node
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
       // default value for goal pose
-      p_goal_base_->pose.position.x = 0.0f;
-      p_goal_base_->pose.position.y = 0.0f;
+      // p_goal_base_->pose.position.x = 0.0f;
+      // p_goal_base_->pose.position.y = 0.0f;
       goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
@@ -162,23 +163,12 @@ class LocalPlanner : public rclcpp::Node
 
     void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
-      // check whether the msg received is under the /map frame
-      if (msg->header.frame_id != "map") {
-        RCLCPP_WARN(this->get_logger(), "Goal pose is not under the /map frame, please publish goal pose under the /map frame.");
-        return;
-      }
-      else {
-        // convert the goal pose from /map frame to /base_link frame
-        try {
-          p_goal_base_->header.frame_id = "base_link";
-          tf_buffer_->transform(*msg, *p_goal_base_, "base_link", tf2::durationFromSec(0.1));
-          RCLCPP_INFO(this->get_logger(), "Goal pose: x: %f, y: %f", p_goal_base_->pose.position.x, p_goal_base_->pose.position.y);
-        } catch (tf2::TransformException &ex) {
-          RCLCPP_WARN(get_logger(), "%s", ex.what());
-          return;
-        }
-
-      }
+      p_goal_map_ = std::const_pointer_cast<geometry_msgs::msg::PoseStamped>(msg);
+      RCLCPP_INFO(this->get_logger(), "Received goal pose: Frame=%s, x=%.2f, y=%.2f, z=%.2f",
+                 p_goal_map_->header.frame_id.c_str(), 
+                 p_goal_map_->pose.position.x,
+                 p_goal_map_->pose.position.y,
+                 p_goal_map_->pose.position.z);
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -380,10 +370,33 @@ class LocalPlanner : public rclcpp::Node
       nav_msgs::msg::Path path;
       float rot_ang;
 
+      RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.f, y: %.f, z: %.f", 
+        p_goal_map_->header.frame_id.c_str(),
+        p_goal_map_->pose.position.x,
+        p_goal_map_->pose.position.y,
+        p_goal_map_->pose.position.z);
+
+      // Get the current goal pose in the base_link frame
+      if (p_goal_map_->header.frame_id != "map") {
+        RCLCPP_WARN(this->get_logger(), "Goal pose is not in the map frame, skipping planning.");
+        return;
+      } 
+      else
+      {
+        try {
+          p_goal_base_->header.frame_id = "base_link";
+          tf_buffer_->transform(*p_goal_map_, *p_goal_base_, "base_link", tf2::durationFromSec(0.2));
+        } catch (tf2::TransformException &ex) {
+          RCLCPP_WARN(get_logger(), "%s", ex.what());
+          return;
+        }
+      }
+
       float x = p_goal_base_->pose.position.x;
       float y = p_goal_base_->pose.position.y;
       float z = p_goal_base_->pose.position.z;
       goal_distance = sqrt(x*x + y*y);
+
       if (goal_distance < 0.1) {
         RCLCPP_INFO(this->get_logger(), "Goal reached!");
 
