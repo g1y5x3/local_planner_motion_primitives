@@ -128,7 +128,7 @@ class LocalPlanner : public rclcpp::Node
     pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ;
     // lidar point cloud filtering
     double dwz_voxel_size;
-    const double z_threshold_min = -0.45;
+    const double z_threshold_min = -0.35;
     const double z_threshold_max =  0.65;
     const double distance_threshold = 3.5;
 
@@ -191,7 +191,7 @@ class LocalPlanner : public rclcpp::Node
 
       // planning and debug functions
       this->local_planner_callback(current_stamp);
-      this->debug_callback();
+      this->debug_callback(current_stamp);
     }
 
     void filter_point_cloud()
@@ -597,23 +597,7 @@ class LocalPlanner : public rclcpp::Node
       fclose(file_ptr);
     }
 
-    void debug_callback() {
-
-      rclcpp::Time current_stamp = this->now();
-
-      std::string target_frame = "map";
-      std::string source_frame = "base_link";
-
-      try {
-        // Wait for the transform to be available
-        if (!tf_buffer_->canTransform(source_frame, target_frame, current_stamp, rclcpp::Duration::from_seconds(0.5))) {
-          RCLCPP_WARN(this->get_logger(), "Transform from %s to %s not available", source_frame.c_str(), target_frame.c_str());
-          return;
-        }
-      } catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(this->get_logger(), "Transform error: %s", ex.what());
-        return;
-      }
+    void debug_callback(rclcpp::Time current_stamp) {
 
       sensor_msgs::msg::PointCloud2 cropped_msg;
       visualization_msgs::msg::MarkerArray path_marker_array;
