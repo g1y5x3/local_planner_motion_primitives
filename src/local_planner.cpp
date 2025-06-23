@@ -153,7 +153,7 @@ class LocalPlanner : public rclcpp::Node
     {
       // transfrom pose from /odom frame to /map frame
       try {
-        p_robot_map_->header.frame_id = "map";
+        // p_robot_map_->header.frame_id = "map";
         tf_buffer_->transform(*msg, *p_robot_map_, "map", tf2::durationFromSec(0.1));
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
@@ -173,10 +173,13 @@ class LocalPlanner : public rclcpp::Node
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
     {
+
+      rclcpp::Time current_stamp = msg->header.stamp;
+
       // transfrom point cloud from /lidar frame to /base_link frame and convert to PCL format
       sensor_msgs::msg::PointCloud2::SharedPtr msg_base = std::make_shared<sensor_msgs::msg::PointCloud2>();
       try {
-        msg_base->header.frame_id = "base_link";
+        // msg_base->header.frame_id = "base_link";
         tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
       } catch (tf2::TransformException &ex) {
         RCLCPP_WARN(get_logger(), "%s", ex.what());
@@ -187,8 +190,7 @@ class LocalPlanner : public rclcpp::Node
       this->filter_point_cloud();
 
       // planning and debug functions
-      this->local_planner_callback();
-
+      this->local_planner_callback(current_stamp);
       this->debug_callback();
     }
 
@@ -365,7 +367,7 @@ class LocalPlanner : public rclcpp::Node
       return final_score;
     }
 
-    void local_planner_callback()
+    void local_planner_callback(rclcpp::Time current_stamp)
     {
       nav_msgs::msg::Path path;
       float rot_ang;
@@ -384,8 +386,8 @@ class LocalPlanner : public rclcpp::Node
       else
       {
         try {
-          p_goal_base_->header.frame_id = "base_link";
-          tf_buffer_->transform(*p_goal_map_, *p_goal_base_, "base_link", tf2::durationFromSec(0.2));
+          p_goal_map_->header.stamp = current_stamp;
+          tf_buffer_->transform(*p_goal_map_, *p_goal_base_, "base_link", tf2::durationFromSec(0.1));
         } catch (tf2::TransformException &ex) {
           RCLCPP_WARN(get_logger(), "%s", ex.what());
           return;
@@ -755,7 +757,7 @@ class LocalPlanner : public rclcpp::Node
       goal_sphere.type = visualization_msgs::msg::Marker::SPHERE;
       goal_sphere.action = visualization_msgs::msg::Marker::ADD;
       goal_sphere.pose.position = p_goal_base_->pose.position;
-      goal_sphere.pose.orientation.w = 1.0;
+      goal_sphere.pose.orientation = p_goal_base_->pose.orientation;
       goal_sphere.scale.x = 0.2;  // Sphere diameter
       goal_sphere.scale.y = 0.2;
       goal_sphere.scale.z = 0.2;
