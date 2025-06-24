@@ -37,12 +37,20 @@ ament_target_dependencies(local_planner
   pcl_conversions
 )
 
+add_executable(pure_pursuit_controller src/pure_pursuit_controller.cpp)
+ament_target_dependencies(pure_pursuit_controller
+  rclcpp
+  nav_msgs
+  geometry_msgs
+)
+
 target_include_directories(local_planner PRIVATE
   ${PCL_INCLUDE_DIRS}
 )
 
 install(TARGETS
   local_planner
+  pure_pursuit_controller
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -408,13 +408,9 @@ class LocalPlanner : public rclcpp::Node
       if (goal_distance < 0.1) {
         RCLCPP_INFO(this->get_logger(), "Goal reached!");
 
-        path.poses.resize(1);
-        path.poses[0].pose.position.x = 0;
-        path.poses[0].pose.position.y = 0;
-        path.poses[0].pose.position.z = 0;
-        path.header.stamp = this->now();
+        path.poses.clear();
+        path.header.stamp = current_stamp;
         path.header.frame_id = "base_link";
-
         path_pub_->publish(path);
 
         return;
@@ -494,7 +490,7 @@ class LocalPlanner : public rclcpp::Node
           break;
         }
       }
-      path.header.stamp = this->now();
+      path.header.stamp = current_stamp;
       path.header.frame_id = "base_link";
       path_pub_->publish(path);
 
