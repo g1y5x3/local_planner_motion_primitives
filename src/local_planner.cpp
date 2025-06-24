@@ -110,6 +110,7 @@ class LocalPlanner : public rclcpp::Node
 
     // path planner variables
     const int threshold_dir = 90;
+    const int threshold_obstacle = 30;
     float goal_distance;
     float goal_angle;
     float minObsAngCW;
@@ -341,27 +342,32 @@ class LocalPlanner : public rclcpp::Node
     float calculate_path_score(int rot_dir,
                                int obstacle_count,
                                float minObsAngCW, float minObsAngCCW,
-                               float goal_angle, float avg_end_dir)
+                               float goal_angle)
     {
       float rot_ang = 10 * rot_dir - 180;
 
       // 1. Obstacle clearance score (0.0 to 1.0)
-      float obstacle_score = fmax(0.0f, 1.0f - (obstacle_count / 20.0f));
+      float obstacle_score = fmax(0.0f, 1.0f - (obstacle_count / threshold_obstacle));
 
       // 2. Rotation safety score
       bool is_safe = (rot_ang > minObsAngCW && rot_ang < minObsAngCCW);
       float rotation_safety_score = is_safe ? 1.0f : 0.1f;
 
       // 3. Direction alignment score (0.0 to 1.0)
-      float diretion_diff = fabs(goal_angle - (rot_ang + avg_end_dir));
-      if (diretion_diff > 360) diretion_diff -= 360;
-      if (diretion_diff > 180) diretion_diff = 360 - diretion_diff;
-      float direction_score = 1.0f - (diretion_diff / 180.0f);
+      float diretion_diff = fabs(goal_angle - rot_ang);
+      if (diretion_diff > 180) { 
+        diretion_diff = 360 - diretion_diff;
+      }
 
-      // 4. Rotation direction score, penalize close to 90% rotation
-      float rotation_score = rot_dir < 18 ? (fabs(rot_dir - 9) +1) / 9.0f : (fabs(rot_dir - 27) + 1) / 9.0f;
+      float direction_score;
+      if (obstacle_count <= threshold_obstacle && is_safe) {
+        direction_score = pow(1.0f - (diretion_diff / 180.0f), 3.0f);
+      }
+      else {
+        direction_score = 1.0f - (diretion_diff / 180.0f);
+      }
 
-      float final_score = obstacle_score * rotation_safety_score * direction_score * rotation_score;
+      float final_score = obstacle_score * rotation_safety_score * direction_score;
       // RCLCPP_INFO(this->get_logger(), "Rotation angle: %f, Group ID: %d, Final Score: %.4f", rot_ang, group_id, final_score);
 
       return final_score;
@@ -446,28 +452,16 @@ class LocalPlanner : public rclcpp::Node
           // Count obstacles affecting this group
           int obstacle_count = count_obstacles(rot_dir, group_id, planner_cloud_);
 
-          // Calculate average end direction for this group
-          float avg_end_dir = 0.0f;
-          int path_count = 0;
-          for (int path_id = 0; path_id < num_path; path_id++) {
-            if (paths_group_id[path_id].front() == group_id) {
-              // Calculate the end direction of the path
-              pcl::PointXYZI end_point = paths[path_id]->points.back();
-              float end_dir = atan2(end_point.y, end_point.x) * 180 / M_PI;
-              avg_end_dir += end_dir;
-              path_count++;
-            }
-          }
-          if (path_count > 0) avg_end_dir /= path_count;
-
           // Calculate the score for this rotation direction and group
           int score_index = rot_dir * num_group + group_id;
 
-          obstacle_counts[score_index] = obstacle_count;
           path_score[score_index] = calculate_path_score(rot_dir,
                                                          obstacle_count,
                                                          minObsAngCW, minObsAngCCW,
-                                                         goal_angle, avg_end_dir);
+                                                         goal_angle);
+
+          // for debugging
+          obstacle_counts[score_index] = obstacle_count;
 
           // Update best score if current score is better
           if (path_score[score_index] > best_score) {
@@ -663,11 +657,14 @@ class LocalPlanner : public rclcpp::Node
 
           // Dim the path if there are obstacles
           int score_index = rot_dir * num_group + paths_group_id[i].front();
-          if (obstacle_counts[score_index] > 5) {
+          float obstacle_score = fmax(0.0f, 1.0f - (obstacle_counts[score_index] / threshold_obstacle));
+          if (obstacle_score == 0.0f) {
             path_marker.color.r = 0.5f;
             path_marker.color.g = 0.5f;
             path_marker.color.a = 0.1f;
           }
+          
+          // Highlight the best path
           if (rot_dir == best_rot_dir && paths_group_id[i].front() == best_group_id) {
             path_marker.scale.x = 0.02; // Line width
             path_marker.color.r = 1.0f;
