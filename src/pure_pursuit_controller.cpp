@@ -14,7 +14,7 @@ public:
     {
         // Declare and get parameters
         this->declare_parameter<double>("lookahead_distance", 0.5); // The "carrot" distance
-        this->declare_parameter<double>("linear_velocity", 0.3); // Constant forward velocity
+        this->declare_parameter<double>("linear_velocity", 0.2); // Constant forward velocity
         this->declare_parameter<double>("goal_tolerance", 0.1); // Tolerance to consider the goal reached
         this->declare_parameter<std::string>("robot_frame", "base_link");
 
