@@ -165,11 +165,6 @@ class LocalPlanner : public rclcpp::Node
     void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
       p_goal_map_ = std::const_pointer_cast<geometry_msgs::msg::PoseStamped>(msg);
-      RCLCPP_INFO(this->get_logger(), "Received goal pose: Frame=%s, x=%.2f, y=%.2f, z=%.2f",
-                 p_goal_map_->header.frame_id.c_str(), 
-                 p_goal_map_->pose.position.x,
-                 p_goal_map_->pose.position.y,
-                 p_goal_map_->pose.position.z);
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -378,7 +373,7 @@ class LocalPlanner : public rclcpp::Node
       nav_msgs::msg::Path path;
       float rot_ang;
 
-      RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.f, y: %.f, z: %.f", 
+      RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.2f, y: %.2f, z: %.2f", 
         p_goal_map_->header.frame_id.c_str(),
         p_goal_map_->pose.position.x,
         p_goal_map_->pose.position.y,
