@@ -60,22 +60,17 @@ class LocalPlanner : public rclcpp::Node
 
       RCLCPP_INFO(this->get_logger(), "Number of voxels from paths pre-generation: %d, Voxel size: %f", voxel_num, voxel_size);
 
+      // pcl point cloud filters initializations
+      lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
+
       // tf listener
       tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
       tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
       // subscribers
-      pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/pose", 5, std::bind(&LocalPlanner::pose_callback, this, std::placeholders::_1));
-
-      // pcl point cloud filters initializations
-      lidar_filter_DWZ.setLeafSize(dwz_voxel_size, dwz_voxel_size, dwz_voxel_size);
       lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
 
-      // default value for goal pose
-      // p_goal_base_->pose.position.x = 0.0f;
-      // p_goal_base_->pose.position.y = 0.0f;
       goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
@@ -148,19 +143,6 @@ class LocalPlanner : public rclcpp::Node
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_sub_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
-
-    // extract only the position from odometry and convert it from /odom frame to /map frame
-    void pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
-    {
-      // transfrom pose from /odom frame to /map frame
-      try {
-        // p_robot_map_->header.frame_id = "map";
-        tf_buffer_->transform(*msg, *p_robot_map_, "map", tf2::durationFromSec(0.1));
-      } catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(get_logger(), "%s", ex.what());
-        return;
-      }
-    }
 
     void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
