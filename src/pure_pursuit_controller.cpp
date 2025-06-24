@@ -125,12 +125,6 @@ private:
         cmd_vel_pub_->publish(std::move(twist_msg));
     }
 
-    // Calculates the squared Euclidean distance between two points.
-    // double distance_sq(const geometry_msgs::msg::Point& p1, const geometry_msgs::msg::Point& p2)
-    // {
-    //     return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y);
-    // }
-
     // Calculates the Euclidean distance between two points.
     double distance(const geometry_msgs::msg::Point& p1, const geometry_msgs::msg::Point& p2)
     {
