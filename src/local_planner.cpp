@@ -569,6 +569,11 @@ class LocalPlanner : public rclcpp::Node
       sensor_msgs::msg::PointCloud2 cropped_msg;
       visualization_msgs::msg::MarkerArray path_marker_array;
 
+      // visualization_msgs::msg::MarkerArray delete_all_markers;
+      visualization_msgs::msg::Marker delete_marker;
+      delete_marker.action = visualization_msgs::msg::Marker::DELETEALL;
+      path_marker_array.markers.push_back(delete_marker);
+
       // 1. visualization for the filtered point cloud
       pcl::toROSMsg(*planner_cloud_, cropped_msg);
       cropped_msg.header.frame_id = "base_link";
@@ -600,7 +605,6 @@ class LocalPlanner : public rclcpp::Node
       circle_marker.color.g = 0.0f;
       circle_marker.color.b = 0.0f;
       circle_marker.color.a = 0.3f;
-      circle_marker.lifetime = rclcpp::Duration::from_seconds(0);
 
       path_marker_array.markers.push_back(circle_marker);
 
@@ -626,7 +630,6 @@ class LocalPlanner : public rclcpp::Node
           path_marker.color.g = 1.0f;
           path_marker.color.b = 0.0f;
           path_marker.color.a = 0.5f;
-          path_marker.lifetime = rclcpp::Duration::from_seconds(0);
 
           // Dim the path if there are obstacles
           int score_index = rot_dir * num_group + paths_group_id[i].front();
