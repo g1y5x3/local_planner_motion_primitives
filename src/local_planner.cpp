@@ -35,7 +35,7 @@ class LocalPlanner : public rclcpp::Node
       p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
     {
       // declare ROS parameters
-      this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/");
+      this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/motion_pregen");
       this->declare_parameter<double>("dwz_voxel_size", 0.05);
       this->declare_parameter<double>("vehicle_length", 1.55);
       this->declare_parameter<double>("vehicle_width", 0.95);
