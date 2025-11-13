@@ -75,9 +75,9 @@ class LocalPlanner : public rclcpp::Node
         "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
       // publishers
-      path_pub_ = this->create_publisher<nav_msgs::msg::Path>("path", 5);
+      path_pub_ = this->create_publisher<nav_msgs::msg::Path>("local_path", 5);
       // ADD A ROS PARAM FOR DEBUGGING
-      filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
+      // filtered_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_lidar_points", 10);
       marker_array_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("path_marker_array", 10);
     }
 
@@ -136,7 +136,7 @@ class LocalPlanner : public rclcpp::Node
     // publishers and subscribers
     // rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subcription_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;
+    // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_sub_;
@@ -147,6 +147,11 @@ class LocalPlanner : public rclcpp::Node
     void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
     {
       p_goal_map_ = std::const_pointer_cast<geometry_msgs::msg::PoseStamped>(msg);
+      RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.2f, y: %.2f, z: %.2f", 
+        p_goal_map_->header.frame_id.c_str(),
+        p_goal_map_->pose.position.x,
+        p_goal_map_->pose.position.y,
+        p_goal_map_->pose.position.z);
     }
 
     void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -354,12 +359,6 @@ class LocalPlanner : public rclcpp::Node
     {
       nav_msgs::msg::Path path;
       float rot_ang;
-
-      RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.2f, y: %.2f, z: %.2f", 
-        p_goal_map_->header.frame_id.c_str(),
-        p_goal_map_->pose.position.x,
-        p_goal_map_->pose.position.y,
-        p_goal_map_->pose.position.z);
 
       // Get the current goal pose in the base_link frame
       if (p_goal_map_->header.frame_id != "map") {
@@ -575,10 +574,10 @@ class LocalPlanner : public rclcpp::Node
       path_marker_array.markers.push_back(delete_marker);
 
       // 1. visualization for the filtered point cloud
-      pcl::toROSMsg(*planner_cloud_, cropped_msg);
-      cropped_msg.header.frame_id = "base_link";
-      cropped_msg.header.stamp = current_stamp;
-      filtered_cloud_pub_->publish(cropped_msg);
+      // pcl::toROSMsg(*planner_cloud_, cropped_msg);
+      // cropped_msg.header.frame_id = "base_link";
+      // cropped_msg.header.stamp = current_stamp;
+      // filtered_cloud_pub_->publish(cropped_msg);
 
       // 2. Add circle marker to visualize robot diameter
       visualization_msgs::msg::Marker circle_marker;
