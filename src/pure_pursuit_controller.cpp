@@ -29,7 +29,7 @@ public:
 
         // Subscriber to the path topic
         path_sub_ = this->create_subscription<nav_msgs::msg::Path>(
-            "/path", 10, std::bind(&PurePursuitController::path_callback, this, std::placeholders::_1));
+            "/local_path", 10, std::bind(&PurePursuitController::path_callback, this, std::placeholders::_1));
 
         // Publisher for velocity commands
         cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
