@@ -170,15 +170,6 @@ class LocalPlanner : public rclcpp::Node
       }
       pcl::fromROSMsg(*msg_base, *lidar_cloud_);
 
-      this->filter_point_cloud();
-
-      // planning and debug functions
-      this->local_planner_callback(current_stamp);
-      this->debug_callback(current_stamp);
-    }
-
-    void filter_point_cloud()
-    {
       // apply distance and height based filtering
       lidar_cloud_crop_->clear();
       int num_points = lidar_cloud_->points.size();
@@ -203,6 +194,10 @@ class LocalPlanner : public rclcpp::Node
       planner_cloud_->clear();
       lidar_filter_DWZ.setInputCloud(lidar_cloud_crop_);
       lidar_filter_DWZ.filter(*planner_cloud_);
+
+      // planning and debug functions
+      this->local_planner_callback(current_stamp);
+      this->debug_callback(current_stamp);
     }
 
     void read_voxel_path_correspondence()
@@ -638,7 +633,7 @@ class LocalPlanner : public rclcpp::Node
             path_marker.color.g = 0.5f;
             path_marker.color.a = 0.1f;
           }
-          
+
           // Highlight the best path
           if (rot_dir == best_rot_dir && paths_group_id[i].front() == best_group_id) {
             path_marker.scale.x = 0.02; // Line width
