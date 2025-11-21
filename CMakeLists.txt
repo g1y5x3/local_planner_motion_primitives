@@ -22,7 +22,12 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
-add_executable(local_planner src/local_planner.cpp)
+add_executable(local_planner
+  src/local_planner.cpp
+  src/path_loader.cpp
+  src/planner_core.cpp
+  src/debug_visualizer.cpp
+)
 
 ament_target_dependencies(local_planner 
   rclcpp
@@ -45,6 +50,8 @@ ament_target_dependencies(pure_pursuit_controller
 )
 
 target_include_directories(local_planner PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
 )
 
