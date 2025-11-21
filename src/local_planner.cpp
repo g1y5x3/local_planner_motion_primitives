@@ -19,7 +19,7 @@ LocalPlanner::LocalPlanner()
   this->declare_parameter<double>("robot_body_radius", 0.5);
   this->declare_parameter<int>("threshold_dir", 90);
   this->declare_parameter<int>("threshold_obstacle", 30);
-  this->declare_parameter<double>("z_threshold_min", -0.45);
+  this->declare_parameter<double>("z_threshold_min", -0.35);
   this->declare_parameter<double>("z_threshold_max", 0.65);
   this->declare_parameter<double>("distance_threshold", 3.5);
 
