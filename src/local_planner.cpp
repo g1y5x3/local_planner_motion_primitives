@@ -14,25 +14,26 @@ LocalPlanner::LocalPlanner()
   // Declare and get ROS parameters
   this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/motion_pregen");
   this->declare_parameter<double>("dwz_voxel_size", 0.05);
-  this->declare_parameter<double>("vehicle_length", 1.55);
-  this->declare_parameter<double>("vehicle_width", 0.95);
-  this->declare_parameter<double>("robot_body_radius", 0.5);
+  this->declare_parameter<double>("vehicle_length", 1.2);
+  this->declare_parameter<double>("vehicle_width", 0.7);
+  this->declare_parameter<double>("robot_body_radius", 0.6);
   this->declare_parameter<int>("threshold_dir", 90);
   this->declare_parameter<int>("threshold_obstacle", 30);
   this->declare_parameter<double>("z_threshold_min", -0.35);
   this->declare_parameter<double>("z_threshold_max", 0.65);
   this->declare_parameter<double>("distance_threshold", 3.5);
 
-  this->get_parameter("pregen_path_dir", planner_config_.pregen_path_dir);
-  this->get_parameter("dwz_voxel_size", planner_config_.dwz_voxel_size);
-  this->get_parameter("vehicle_length", vehicle_params_.length);
-  this->get_parameter("vehicle_width", vehicle_params_.width);
-  this->get_parameter("robot_body_radius", vehicle_params_.body_radius);
-  this->get_parameter("threshold_dir", planner_config_.threshold_dir);
+  this->get_parameter("pregen_path_dir",    planner_config_.pregen_path_dir);
+  this->get_parameter("dwz_voxel_size",     planner_config_.dwz_voxel_size);
+  this->get_parameter("threshold_dir",      planner_config_.threshold_dir);
   this->get_parameter("threshold_obstacle", planner_config_.threshold_obstacle);
-  this->get_parameter("z_threshold_min", planner_config_.z_threshold_min);
-  this->get_parameter("z_threshold_max", planner_config_.z_threshold_max);
+  this->get_parameter("z_threshold_min",    planner_config_.z_threshold_min);
+  this->get_parameter("z_threshold_max",    planner_config_.z_threshold_max);
   this->get_parameter("distance_threshold", planner_config_.distance_threshold);
+
+  this->get_parameter("vehicle_length",    vehicle_params_.length);
+  this->get_parameter("vehicle_width",     vehicle_params_.width);
+  this->get_parameter("robot_body_radius", vehicle_params_.body_radius);
 
   RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_params_.length, vehicle_params_.width);
 
@@ -40,24 +41,24 @@ LocalPlanner::LocalPlanner()
   path_loader_ = std::make_unique<PathLoader>(this->get_logger(), planner_config_, path_data_);
   path_loader_->load_paths();
 
-  planner_core_ = std::make_unique<PlannerCore>(this->get_logger(), vehicle_params_, planner_config_, path_data_, planner_data_);
-  debug_visualizer_ = std::make_unique<DebugVisualizer>(this, vehicle_params_, planner_config_, path_data_, planner_data_);
-  
-  // PCL filter
-  lidar_filter_DWZ_.setLeafSize(planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size);
+  // planner_core_ = std::make_unique<PlannerCore>(this->get_logger(), vehicle_params_, planner_config_, path_data_, planner_data_);
+  // debug_visualizer_ = std::make_unique<DebugVisualizer>(this, vehicle_params_, planner_config_, path_data_, planner_data_);
+  // 
+  // // PCL filter
+  // lidar_filter_DWZ_.setLeafSize(planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size);
 
-  // TF
-  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+  // // TF
+  // tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  // tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  // Subscribers
-  lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
-  goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
+  // // Subscribers
+  // lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  //   "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
+  // goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+  //   "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
 
-  // Publishers
-  path_pub_ = this->create_publisher<nav_msgs::msg::Path>("local_path", 5);
+  // // Publishers
+  // path_pub_ = this->create_publisher<nav_msgs::msg::Path>("local_path", 5);
 }
 
 void LocalPlanner::goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
