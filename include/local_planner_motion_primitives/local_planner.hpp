@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <cmath> // For M_PI
+#include <unordered_map>
+#include <utility> // For std::pair
 
 namespace local_planner_motion_primitives
 {
@@ -17,9 +19,31 @@ const int NUM_ROTATIONS = 36;
 const int ANGLE_STEP = 10;
 const float VOXEL_SIZE = 0.05f;
 const float X_MIN = 0.0f;
-const float X_MAX = 3.2f;
+const float X_MAX = 3.0f;
 const float Y_MIN = -3.0f;
 const float Y_MAX = 3.0f;
+
+// A custom hash function for std::pair<int, int> keys in the unordered_map.
+struct VoxelIndexHash {
+    std::size_t operator()(const std::pair<int, int>& p) const {
+        // A common way to combine two integer hashes.
+        auto hash1 = std::hash<int>{}(p.first);
+        auto hash2 = std::hash<int>{}(p.second);
+        return hash1 ^ (hash2 << 1);
+    }
+};
+
+// The main data structure to store the voxel-to-path mapping.
+// Key: {ix, iy}, Value: vector of path IDs
+using VoxelMap = std::unordered_map<std::pair<int, int>, std::vector<int>, VoxelIndexHash>;
+
+struct PathData
+{
+  pcl::PointCloud<pcl::PointXYZI>::Ptr paths[NUM_PATH];
+  pcl::PointCloud<pcl::PointXYZI>::Ptr paths_start[NUM_GROUP];
+  std::vector<int> paths_group_id[NUM_PATH];
+  VoxelMap voxel_path_corr;
+};
 
 struct VehicleParams
 {
@@ -37,17 +61,6 @@ struct PlannerConfig
   int threshold_dir;
   int threshold_obstacle;
   std::string pregen_path_dir;
-};
-
-struct PathData
-{
-  pcl::PointCloud<pcl::PointXYZI>::Ptr paths[NUM_PATH];
-  pcl::PointCloud<pcl::PointXYZI>::Ptr paths_start[NUM_GROUP];
-  std::vector<int> paths_group_id[NUM_PATH];
-  std::vector<std::vector<int>> voxel_path_corr;
-  int num_voxels_x;
-  int num_voxels_y;
-  int voxel_num;
 };
 
 struct PlannerData {

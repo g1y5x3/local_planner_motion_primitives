@@ -114,14 +114,13 @@ int PlannerCore::count_obstacles(int rot_dir, int group_id,
     float y = planner_cloud->points[i].y;
     auto [x2, y2] = rotate_point(x, y, -rot_ang);
 
-    int ix = static_cast<int>((x2 - X_MIN - 0.5f * VOXEL_SIZE) / VOXEL_SIZE);
-    int iy = static_cast<int>((y2 - Y_MIN - 0.5f * VOXEL_SIZE) / VOXEL_SIZE);
+    int ix = static_cast<int>(std::floor((x2 - X_MIN) / VOXEL_SIZE));
+    int iy = static_cast<int>(std::floor((y2 - Y_MIN) / VOXEL_SIZE));
 
-    if (ix >= 0 && ix < path_data_.num_voxels_x && iy >= 0 && iy < path_data_.num_voxels_y) {
-      int ind = path_data_.num_voxels_y * ix + iy;
-      int blocked_path_num = path_data_.voxel_path_corr[ind].size();
-      for (int j = 0; j < blocked_path_num; j++) {
-        int path_id = path_data_.voxel_path_corr[ind][j];
+    auto it = path_data_.voxel_path_corr.find({ix, iy});
+    if (it != path_data_.voxel_path_corr.end()) {
+      const std::vector<int>& blocked_paths = it->second;
+      for (int path_id : blocked_paths) {
         if (path_data_.paths_group_id[path_id].front() == group_id) {
           total_obstacles++;
           break; // only count once for each group

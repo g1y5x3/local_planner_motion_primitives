@@ -1,6 +1,8 @@
 #include "local_planner_motion_primitives/path_loader.hpp"
 #include <fstream> // For C++ file streams
 #include <iostream> // For exit()
+#include <sstream>
+#include <string>
 
 namespace local_planner_motion_primitives
 {
@@ -8,14 +10,7 @@ namespace local_planner_motion_primitives
 PathLoader::PathLoader(rclcpp::Logger logger, const PlannerConfig& config, PathData& path_data)
 : logger_(logger), config_(config), path_data_(path_data)
 {
-  // Calculate num_voxels_x, num_voxels_y, voxel_num based on constants
-  path_data_.num_voxels_x = static_cast<int>(std::ceil((X_MAX - X_MIN) / VOXEL_SIZE));
-  path_data_.num_voxels_y = static_cast<int>(std::ceil((Y_MAX - Y_MIN) / VOXEL_SIZE));
-  path_data_.voxel_num = path_data_.num_voxels_x * path_data_.num_voxels_y;
-
-  path_data_.voxel_path_corr.resize(path_data_.voxel_num);
-
-  RCLCPP_INFO(logger_, "Number of voxels from paths pre-generation: %d, Voxel size: %f", path_data_.voxel_num, VOXEL_SIZE);
+  RCLCPP_INFO(logger_, "Voxel size from constants: %f", VOXEL_SIZE);
 
   // Initialize paths
   for (int i = 0; i < NUM_PATH; ++i) {
@@ -93,18 +88,36 @@ void PathLoader::read_voxel_path_correspondence_file()
     exit(1); // TODO: Replace with exception or graceful shutdown
   }
 
-  int voxel_id, path_id;
-  for (int i = 0; i < path_data_.voxel_num; ++i) {
-    if (!(file >> voxel_id)) {
-      RCLCPP_ERROR(logger_, "Error reading voxel index for voxel %d", i);
-      exit(1); // TODO: Replace with exception or graceful shutdown
+  path_data_.voxel_path_corr.clear();
+
+  std::string line;
+  while (std::getline(file, line)) {
+    std::stringstream ss(line);
+    int ix, iy;
+
+    // Read the voxel indices
+    if (!(ss >> ix >> iy)) {
+        RCLCPP_WARN(logger_, "Skipping malformed line in voxel correspondence file.");
+        continue;
     }
-    while (file >> path_id && path_id != -1) {
-      path_data_.voxel_path_corr[voxel_id].push_back(path_id);
+
+    std::pair<int, int> voxel_index = {ix, iy};
+    std::vector<int> path_ids;
+    int path_id;
+
+    // Read all path IDs until the end of the line
+    while (ss >> path_id) {
+      if (path_id != -1) { // The -1 is a terminator in each line
+        path_ids.push_back(path_id);
+      }
+    }
+
+    if (!path_ids.empty()) {
+      path_data_.voxel_path_corr[voxel_index] = path_ids;
     }
   }
 
-  RCLCPP_INFO(logger_, "Successfully loaded voxel path correspondence!");
+  RCLCPP_INFO(logger_, "Successfully loaded %zu sparse voxel path correspondences!", path_data_.voxel_path_corr.size());
   file.close();
 }
 
