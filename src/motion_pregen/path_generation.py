@@ -10,7 +10,7 @@ angle = 27
 delta_angle = angle / 3
 scale = 0.65
 
-# Generating paths
+# 1. Generating paths
 path_start_all = []
 path_all = []
 path_list = []
@@ -58,7 +58,7 @@ for shift1 in np.arange(-angle, angle+0.1, delta_angle):
     
     group_id += 1
 
-# Plot generated paths
+# plot generated paths
 group_label = [0, 0, 0, 0, 0, 0, 0]
 colors = plt.cm.tab10(np.linspace(0, 1, 7))
 color_list = [tuple(color[:3]) for color in colors]
@@ -85,97 +85,83 @@ plt.xlabel('X (m)')
 plt.ylabel('Y (m)')
 plt.show()
 
+# 2. Efficiently generate a sparse voxel grid containing only voxels near a path
 # Parameters for patch matching and blocking
 # These parameters are also used in the local_planner node
 # TODO: make it read from a yaml file
-
+x_min, x_max = 0, 3
+y_min, y_max = -3, 3
 voxel_size = 0.05
-x_min = 0
-x_max = 3.2
-y_min = -3
-y_max = 3
-num_voxels_x = int(math.ceil((x_max - x_min) / voxel_size))
-num_voxels_y = int(math.ceil((y_max - y_min) / voxel_size))
+search_radius = 0.1
 
-voxel_points = []
-for ix in range(num_voxels_x):
-    for iy in range(num_voxels_y):
-        # without the + 0.5, the calculation would give the coordinates of the 
-        # bottom-left corner of each voxel instead of the center of the voxel.
-        x_center = x_min + (ix + 0.5) * voxel_size
-        y_center = y_min + (iy + 0.5) * voxel_size
-        voxel_points.append([x_center, y_center])
+print("Generating sparse voxel grid...")
+voxel_to_paths = {}
+path_data = np.vstack(path_all)
+path_points = path_data[:, :2]
+path_ids = path_data[:, 3].astype(int)
 
-voxel_points = np.array(voxel_points)
+# For each path point, find all voxels within search_radius
+search_radius_sq = search_radius**2
+search_box_half_width = math.ceil(search_radius / voxel_size)
+
+for i, point in enumerate(path_points):
+    px, py = point
+    path_id = path_ids[i]
+    
+    center_ix = int(math.floor((px - x_min) / voxel_size))
+    center_iy = int(math.floor((py - y_min) / voxel_size))
+    
+    for ix_offset in range(-search_box_half_width, search_box_half_width + 1):
+        for iy_offset in range(-search_box_half_width, search_box_half_width + 1):
+            ix = center_ix + ix_offset
+            iy = center_iy + iy_offset
+            
+            vx = x_min + (ix + 0.5) * voxel_size
+            vy = y_min + (iy + 0.5) * voxel_size
+            
+            dist_sq = (px - vx)**2 + (py - vy)**2
+            
+            if dist_sq <= search_radius_sq:
+                if (ix, iy) not in voxel_to_paths:
+                    voxel_to_paths[(ix, iy)] = set()
+                voxel_to_paths[(ix, iy)].add(path_id)
+
+print(f"Generated {len(voxel_to_paths)} occupied voxels.")
+
+# Create voxel_points array for plotting
+voxel_indices = np.array(list(voxel_to_paths.keys()))
+voxel_points = np.zeros((len(voxel_indices), 2))
+voxel_points[:, 0] = x_min + (voxel_indices[:, 0] + 0.5) * voxel_size
+voxel_points[:, 1] = y_min + (voxel_indices[:, 1] + 0.5) * voxel_size
 
 # Plot voxels
 fig = plt.figure(figsize=(10, 12))
 ax = fig.add_subplot(111)
-ax.plot(voxel_points[:, 0], voxel_points[:, 1], marker='x', color='blue', linestyle='none')
-
-highlight_idx = 1494
-ax.plot(voxel_points[highlight_idx, 0], voxel_points[highlight_idx, 1],
-        marker='o', color='red', markersize=12, markeredgewidth=2, label='Highlighted Voxel')
-
-ax.set_title(f'Voxel Points Visualization\n{len(voxel_points)} voxels\n'
-             f'voxel x num {num_voxels_x}\nvoxel y num {num_voxels_y}\n'
-             f'highlighted voxel index {highlight_idx} (x: {voxel_points[highlight_idx, 0]}, y: {voxel_points[highlight_idx, 1]})')
+ax.plot(voxel_points[:, 0], voxel_points[:, 1], 'bx', label='Occupied Voxels')
+ax.set_title(f'Sparse Voxel Points Visualization\n{len(voxel_points)} voxels')
 ax.set_xlim([-0.2, 3.5])
-ax.set_ylim([-4.5, 4.5])
+ax.set_ylim([-3, 3])
 plt.xlabel('X (m)')
 plt.ylabel('Y (m)')
 ax.legend()
 plt.show()
 
-#Collision checking (Memory Intensitve)
-# For every points in the path, check whether there is any point next to it within the radius in the voxel points
-search_radius = 0.085
-path_points = np.vstack([path[:, :2] for path in path_all])
-print(path_points.shape)
-kdtree = cKDTree(path_points)
-indices = kdtree.query_ball_point(voxel_points, search_radius)
-print(indices.shape)
-print(indices[highlight_idx])
-
-# Plot voxels with correspondence
-fig = plt.figure(figsize=(10, 12))
-ax = fig.add_subplot(111)
-
-for i, index in enumerate(indices):
-    if index:
-        ax.plot(voxel_points[i, 0], voxel_points[i, 1], marker='o', color='red', linestyle='none')
-    else:
-        ax.plot(voxel_points[i, 0], voxel_points[i, 1], marker='x', color='blue', linestyle='none')
-
-ax.set_title(f'Voxel Points Visualization with Correspondence\n{len(voxel_points)} voxels')
-ax.set_xlim([-0.2, 3.5])
-ax.set_ylim([-4.5, 4.5])
-plt.xlabel('X (m)')
-plt.ylabel('Y (m)')
-plt.show()
-
 # Save the data into txt file
+# Data structure: x y z group_id
 array = np.vstack(path_start_all)
-np.savetxt('pregen_path_start.txt', array, fmt="%f %f %f %d", delimiter='')
+np.savetxt('pregen_path_start.txt', array, fmt="%f %f %f %d", delimiter=' ')
 
+# Data structure: x y z path_id group_id
 array = np.vstack(path_all)
-np.savetxt('pregen_path_all.txt', array, fmt="%f %f %f %d %d", delimiter='')
+np.savetxt('pregen_path_all.txt', array, fmt="%f %f %f %d %d", delimiter=' ')
 
-# Each row starting with an index represents a voxel, the following indices are the generated paths
-# that pass through the voxel
+# Data Structure: ix iy path_id1 path_id2 ... -1
+# This format is more suitable for a sparse grid.
+print("Saving voxel-path correspondence file...")
 with open('pregen_voxel_path_corr.txt', 'w') as f:
-    array = np.vstack(path_all)
-    for idx, sublist in enumerate(indices):
-        f.write(f"{idx} ")
-        
-        path_id_rec = -1
-        for list_id in sublist:
-            path_id = int(array[list_id, 3])
-
-            if path_id_rec == path_id:
-                continue
-
+    for (ix, iy), path_ids in sorted(voxel_to_paths.items()):
+        f.write(f"{ix} {iy} ")
+        for path_id in sorted(list(path_ids)):
             f.write(f"{path_id} ")
-            path_id_rec = path_id
-
         f.write("-1\n")
+print("Done.")
