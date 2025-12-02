@@ -11,7 +11,6 @@ LocalPlanner::LocalPlanner()
     p_goal_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
     p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
 {
-  // Declare and get ROS parameters
   this->declare_parameter<std::string>("pregen_path_dir", "src/local_planner_motion_primitives/src/motion_pregen");
   this->declare_parameter<double>("dwz_voxel_size", 0.05);
   this->declare_parameter<double>("vehicle_length", 1.2);
@@ -21,7 +20,7 @@ LocalPlanner::LocalPlanner()
   this->declare_parameter<int>("threshold_obstacle", 30);
   this->declare_parameter<double>("z_threshold_min", -0.35);
   this->declare_parameter<double>("z_threshold_max", 0.65);
-  this->declare_parameter<double>("distance_threshold", 3.5);
+  this->declare_parameter<double>("distance_threshold", 3.0);
 
   this->get_parameter("pregen_path_dir",    planner_config_.pregen_path_dir);
   this->get_parameter("dwz_voxel_size",     planner_config_.dwz_voxel_size);
@@ -41,24 +40,26 @@ LocalPlanner::LocalPlanner()
   path_loader_ = std::make_unique<PathLoader>(this->get_logger(), planner_config_, path_data_);
   path_loader_->load_paths();
 
-  // planner_core_ = std::make_unique<PlannerCore>(this->get_logger(), vehicle_params_, planner_config_, path_data_, planner_data_);
-  // debug_visualizer_ = std::make_unique<DebugVisualizer>(this, vehicle_params_, planner_config_, path_data_, planner_data_);
-  // 
-  // // PCL filter
-  // lidar_filter_DWZ_.setLeafSize(planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size);
+  planner_core_ = std::make_unique<PlannerCore>(this->get_logger(), vehicle_params_, planner_config_, path_data_, planner_data_);
+  debug_visualizer_ = std::make_unique<DebugVisualizer>(this, vehicle_params_, planner_config_, path_data_, planner_data_);
 
-  // // TF
-  // tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
-  // tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+  // pointcloud filter
+  lidar_filter_DWZ_.setLeafSize(planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size, planner_config_.dwz_voxel_size);
 
-  // // Subscribers
-  // lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-  //   "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1));
-  // goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-  //   "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1));
+  // TF
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  // // Publishers
-  // path_pub_ = this->create_publisher<nav_msgs::msg::Path>("local_path", 5);
+  // Subscribers
+  lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    "/lidar", 5, std::bind(&LocalPlanner::lidar_callback, this, std::placeholders::_1)
+  );
+  goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+    "/goal_pose", 5, std::bind(&LocalPlanner::goal_pose_callback, this, std::placeholders::_1)
+  );
+
+  // Publishers
+  path_pub_ = this->create_publisher<nav_msgs::msg::Path>("local_path", 5);
 }
 
 void LocalPlanner::goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
@@ -85,6 +86,7 @@ void LocalPlanner::lidar_callback(const sensor_msgs::msg::PointCloud2::ConstShar
   }
   pcl::fromROSMsg(*msg_base, *lidar_cloud_);
 
+  // TODO: Re-visit the filter strategy for better performance
   // Apply distance and height based filtering
   lidar_cloud_crop_->clear();
   for (const auto& point : lidar_cloud_->points) {
@@ -125,14 +127,13 @@ void LocalPlanner::plan_and_publish(const rclcpp::Time& stamp)
     return;
   }
 
-  float x = p_goal_base_->pose.position.x;
-  float y = p_goal_base_->pose.position.y;
-  planner_data_.goal_distance = std::sqrt(x * x + y * y);
-  planner_data_.goal_angle = std::atan2(y, x) * 180 / M_PI;
+  // Calculate the goal distance
+  planner_data_.goal_x = p_goal_base_->pose.position.x;
+  planner_data_.goal_y = p_goal_base_->pose.position.y;
+  const float goal_dist = std::sqrt(std::pow(planner_data_.goal_x, 2) + std::pow(planner_data_.goal_y, 2));
+  RCLCPP_INFO(this->get_logger(), "Goal distance : %.2f", goal_dist);
 
-  RCLCPP_INFO(this->get_logger(), "Goal distance after transformation: %.2f", planner_data_.goal_distance);
-
-  if (planner_data_.goal_distance < 0.1) {
+  if (goal_dist < 0.1) {
     RCLCPP_INFO(this->get_logger(), "Goal reached!");
     path.poses.clear();
     path.header.stamp = stamp;
@@ -141,20 +142,24 @@ void LocalPlanner::plan_and_publish(const rclcpp::Time& stamp)
     return;
   }
 
+  const float max_path_dist = std::min((float)planner_config_.distance_threshold, goal_dist);
+
   // Calculate path scores
   planner_core_->calculate_path_scores(planner_cloud_);
+  RCLCPP_INFO(this->get_logger(), "Best path score: %.4f", planner_data_.best_score);
 
   // Publish the best path
-  float rot_ang = ANGLE_STEP * planner_data_.best_rot_dir - 180;
+  float rot_ang = ANGLE_STEP * planner_data_.best_rot_dir - 90.0f;
   int path_length = path_data_.paths_start[planner_data_.best_group_id]->points.size();
+  RCLCPP_INFO(this->get_logger(), "TEST");
   path.poses.resize(path_length);
   for (int i = 0; i < path_length; i++) {
-    x = path_data_.paths_start[planner_data_.best_group_id]->points[i].x;
-    y = path_data_.paths_start[planner_data_.best_group_id]->points[i].y;
+    float x = path_data_.paths_start[planner_data_.best_group_id]->points[i].x;
+    float y = path_data_.paths_start[planner_data_.best_group_id]->points[i].y;
     float z = path_data_.paths_start[planner_data_.best_group_id]->points[i].z;
     float distance = std::sqrt(x * x + y * y);
 
-    if (distance <= planner_config_.distance_threshold && distance <= planner_data_.goal_distance) {
+    if (distance <= max_path_dist) {
       auto [x_rot, y_rot] = rotate_point(x, y, rot_ang);
       path.poses[i].pose.position.x = x_rot;
       path.poses[i].pose.position.y = y_rot;
@@ -167,11 +172,15 @@ void LocalPlanner::plan_and_publish(const rclcpp::Time& stamp)
 
   path.header.stamp = stamp;
   path.header.frame_id = "base_link";
+  RCLCPP_INFO(this->get_logger(), "TEST2");
   path_pub_->publish(path);
 
+  RCLCPP_INFO(this->get_logger(), "Published path with %zu poses.", path.poses.size());
+
   // Log the best path parameters
-  RCLCPP_INFO(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %d, Group: %d",
-              planner_data_.goal_distance, planner_data_.goal_angle, planner_data_.best_score, ANGLE_STEP * planner_data_.best_rot_dir - 180, planner_data_.best_group_id);
+  const float goal_angle_log = std::atan2(planner_data_.goal_y, planner_data_.goal_x) * 180 / M_PI;
+  RCLCPP_INFO(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %f, Group: %d",
+              goal_dist, goal_angle_log, planner_data_.best_score, (float)(ANGLE_STEP * planner_data_.best_rot_dir - 90.0f), planner_data_.best_group_id);
 }
 
 } // namespace local_planner_motion_primitives

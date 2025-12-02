@@ -19,6 +19,7 @@ PathLoader::PathLoader(rclcpp::Logger logger, const PlannerConfig& config, PathD
   for (int i = 0; i < NUM_GROUP; ++i) {
       path_data_.paths_start[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
   }
+  path_data_.group_paths.resize(NUM_GROUP);
 }
 
 void PathLoader::load_paths()
@@ -29,6 +30,7 @@ void PathLoader::load_paths()
 
 void PathLoader::read_path_file()
 {
+  // for debugging the planner
   std::string filename = config_.pregen_path_dir + "/pregen_path_all.txt";
   std::ifstream file(filename);
 
@@ -40,10 +42,11 @@ void PathLoader::read_path_file()
   pcl::PointXYZI point;
   int path_id, path_group_id;
 
+  // TODO make the loading of deubgging points optional
   // since the path points are used for display purpose, reduce the total number of displayed points
   // to save computation
   int skip_count = 0;
-  int skip_num = 43; // TODO: Make this a parameter
+  int skip_num = 43;
 
   while (file >> point.x >> point.y >> point.z >> path_id >> path_group_id) {
     skip_count++;
@@ -56,7 +59,7 @@ void PathLoader::read_path_file()
     }
   }
 
-  RCLCPP_INFO(logger_, "Successfully loaded paths and path groups!");
+  // RCLCPP_INFO(logger_, "Successfully loaded paths and path groups!");
   file.close();
 
   // Read path start points
@@ -76,6 +79,16 @@ void PathLoader::read_path_file()
 
   RCLCPP_INFO(logger_, "Successfully loaded path start points!");
   file.close();
+
+  // Populate the group_paths mapping for efficient lookup
+  for (int i = 0; i < NUM_PATH; ++i) {
+    if (!path_data_.paths_group_id[i].empty()) {
+      int group_id = path_data_.paths_group_id[i].front();
+      if (group_id >= 0 && group_id < NUM_GROUP) {
+        path_data_.group_paths[group_id].push_back(i);
+      }
+    }
+  }
 }
 
 void PathLoader::read_voxel_path_correspondence_file()

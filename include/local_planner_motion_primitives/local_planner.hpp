@@ -15,7 +15,7 @@ namespace local_planner_motion_primitives
 // Constants from the original LocalPlanner class
 const int NUM_PATH = 343;
 const int NUM_GROUP = 7;
-const int NUM_ROTATIONS = 36;
+const int NUM_ROTATIONS = 19;
 const int ANGLE_STEP = 10;
 const float VOXEL_SIZE = 0.05f;
 const float X_MIN = 0.0f;
@@ -39,10 +39,11 @@ using VoxelMap = std::unordered_map<std::pair<int, int>, std::vector<int>, Voxel
 
 struct PathData
 {
-  pcl::PointCloud<pcl::PointXYZI>::Ptr paths[NUM_PATH];
-  pcl::PointCloud<pcl::PointXYZI>::Ptr paths_start[NUM_GROUP];
+  pcl::PointCloud<pcl::PointXYZI>::Ptr paths[NUM_PATH];         // entire path
+  pcl::PointCloud<pcl::PointXYZI>::Ptr paths_start[NUM_GROUP];  // the published path
   std::vector<int> paths_group_id[NUM_PATH];
   VoxelMap voxel_path_corr;
+  std::vector<std::vector<int>> group_paths;
 };
 
 struct VehicleParams
@@ -64,8 +65,8 @@ struct PlannerConfig
 };
 
 struct PlannerData {
-    float goal_distance;
-    float goal_angle;
+    float goal_x;
+    float goal_y;
     float minObsAngCW;
     float minObsAngCCW;
     std::vector<int> obstacle_counts;
@@ -97,6 +98,7 @@ inline std::pair<float, float> rotate_point(float x, float y, float angle_deg) {
     float y_rot = std::sin(angle_rad) * x + std::cos(angle_rad) * y;
     return std::make_pair(x_rot, y_rot);
 }
+
 
 
 } // namespace local_planner_motion_primitives
