@@ -49,6 +49,7 @@ private:
   const std_msgs::msg::ColorRGBA DIM_GRAY = []{ std_msgs::msg::ColorRGBA c; c.r=0.5; c.g=0.5; c.b=0.5; c.a=0.1; return c; }();
   const std_msgs::msg::ColorRGBA PURPLE = []{ std_msgs::msg::ColorRGBA c; c.r=0.6; c.g=0.0; c.b=0.4; c.a=1.0; return c; }();
   const std_msgs::msg::ColorRGBA GREEN = []{ std_msgs::msg::ColorRGBA c; c.r=0.0; c.g=1.0; c.b=0.0; c.a=1.0; return c; }();
+  const std_msgs::msg::ColorRGBA COLLIDED_PATH_COLOR = []{ std_msgs::msg::ColorRGBA c; c.r=1.0; c.g=0.2; c.b=0.2; c.a=0.1; return c; }();
 };
 
 } // namespace mpl_planner

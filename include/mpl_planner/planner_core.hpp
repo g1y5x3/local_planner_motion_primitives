@@ -33,6 +33,7 @@ private:
   const PathData& path_data_;
   PlannerData& planner_data_;
 
+
 };
 
 } // namespace mpl_planner

@@ -50,7 +50,6 @@ private:
 
   // Point clouds
   pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
-  pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_crop_;
   pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
   pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ_;
 

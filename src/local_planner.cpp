@@ -6,7 +6,6 @@ namespace mpl_planner
 LocalPlanner::LocalPlanner()
   : Node("local_planner"),
     lidar_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
-    lidar_cloud_crop_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
     planner_cloud_(std::make_shared<pcl::PointCloud<pcl::PointXYZI>>()),
     p_goal_map_(std::make_shared<geometry_msgs::msg::PoseStamped>()),
     p_goal_base_(std::make_shared<geometry_msgs::msg::PoseStamped>())
@@ -85,11 +84,11 @@ void LocalPlanner::lidar_callback(const sensor_msgs::msg::PointCloud2::ConstShar
   pcl::fromROSMsg(*msg_base, *lidar_cloud_);
 
   // Apply distance and height based filtering
-  lidar_cloud_crop_->clear();
+  planner_cloud_->clear();
   for (const auto& point : lidar_cloud_->points) {
     float distance = std::sqrt(point.x * point.x + point.y * point.y);
     if (distance < planner_config_.distance_threshold) {
-      lidar_cloud_crop_->push_back(point);
+      planner_cloud_->push_back(point);
     }
   }
 }
