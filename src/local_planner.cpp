@@ -61,6 +61,7 @@ LocalPlanner::LocalPlanner()
 void LocalPlanner::goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
 {
   p_goal_map_ = std::const_pointer_cast<geometry_msgs::msg::PoseStamped>(msg);
+  goal_reached_printed_ = false; // Reset when a new goal is received
   RCLCPP_INFO(this->get_logger(), "Goal pose received, p_goal_map_ frame: %s, x: %.2f, y: %.2f, z: %.2f",
     p_goal_map_->header.frame_id.c_str(),
     p_goal_map_->pose.position.x,
@@ -105,7 +106,8 @@ void LocalPlanner::plan_timer_callback()
   }
 
   try {
-    p_goal_map_->header.stamp = current_stamp;
+    // request the latest available transform by setting stamp to 0
+    p_goal_map_->header.stamp = rclcpp::Time(0);
     tf_buffer_->transform(*p_goal_map_, *p_goal_base_, "base_link", tf2::durationFromSec(0.1));
   } catch (tf2::TransformException &ex) {
     RCLCPP_WARN(get_logger(), "%s", ex.what());
@@ -118,13 +120,17 @@ void LocalPlanner::plan_timer_callback()
   const float goal_dist = std::sqrt(std::pow(planner_data_.goal_x, 2) + std::pow(planner_data_.goal_y, 2));
 
   if (goal_dist < 0.1) {
-    RCLCPP_INFO(this->get_logger(), "Goal reached!");
+    if (!goal_reached_printed_) {
+      RCLCPP_INFO(this->get_logger(), "Goal reached!");
+      goal_reached_printed_ = true;
+    }
     path.poses.clear();
     path.header.stamp = current_stamp;
     path.header.frame_id = "base_link";
     path_pub_->publish(path);
     return;
   }
+  goal_reached_printed_ = false; // Reset if goal is no longer reached
   const float max_path_dist = std::min((float)planner_config_.distance_threshold, goal_dist);
 
   // Calculate path scores
@@ -159,7 +165,7 @@ void LocalPlanner::plan_timer_callback()
 
   // Log the best path parameters
   const float goal_angle_log = std::atan2(planner_data_.goal_y, planner_data_.goal_x) * 180 / M_PI;
-  RCLCPP_INFO(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %f, Group: %d",
+  RCLCPP_DEBUG(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %f, Group: %d",
               goal_dist, goal_angle_log, planner_data_.best_score, (float)(ANGLE_STEP * planner_data_.best_rot_dir - 90.0f), planner_data_.best_group_id);
 
   // Publish debug visualizations

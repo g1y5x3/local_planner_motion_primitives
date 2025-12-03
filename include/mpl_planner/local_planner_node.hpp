@@ -72,6 +72,7 @@ private:
   // Timer and Mutex for threaded planning
   rclcpp::TimerBase::SharedPtr plan_timer_;
   std::mutex planner_data_mutex_;
+  bool goal_reached_printed_ = false;
 
   // Callbacks
   void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg);
