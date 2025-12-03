@@ -1,11 +1,12 @@
-#ifndef LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_NODE_HPP_
-#define LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_NODE_HPP_
+#ifndef MPL_PLANNER__LOCAL_PLANNER_NODE_HPP_
+#define MPL_PLANNER__LOCAL_PLANNER_NODE_HPP_
 
 #include <cmath>
 #include <numeric>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -20,12 +21,12 @@
 #include "pcl/filters/voxel_grid.h"
 #include "pcl_conversions/pcl_conversions.h"
 
-#include "local_planner_motion_primitives/local_planner.hpp"
-#include "local_planner_motion_primitives/path_loader.hpp"
-#include "local_planner_motion_primitives/planner_core.hpp"
-#include "local_planner_motion_primitives/debug_visualizer.hpp"
+#include "mpl_planner/local_planner.hpp"
+#include "mpl_planner/path_loader.hpp"
+#include "mpl_planner/planner_core.hpp"
+#include "mpl_planner/debug_visualizer.hpp"
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 class LocalPlanner : public rclcpp::Node
@@ -68,12 +69,16 @@ private:
   // Publishers
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
 
+  // Timer and Mutex for threaded planning
+  rclcpp::TimerBase::SharedPtr plan_timer_;
+  std::mutex planner_data_mutex_;
+
   // Callbacks
   void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg);
   void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
-  void plan_and_publish(const rclcpp::Time& stamp);
+  void plan_timer_callback();
 };
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner
 
-#endif // LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_NODE_HPP_
+#endif // MPL_PLANNER__LOCAL_PLANNER_NODE_HPP_

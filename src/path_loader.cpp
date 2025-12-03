@@ -1,10 +1,10 @@
-#include "local_planner_motion_primitives/path_loader.hpp"
+#include "mpl_planner/path_loader.hpp"
 #include <fstream> // For C++ file streams
 #include <iostream> // For exit()
 #include <sstream>
 #include <string>
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 PathLoader::PathLoader(rclcpp::Logger logger, const PlannerConfig& config, PathData& path_data)
@@ -134,4 +134,4 @@ void PathLoader::read_voxel_path_correspondence_file()
   file.close();
 }
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner

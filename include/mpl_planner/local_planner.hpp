@@ -1,5 +1,5 @@
-#ifndef LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_HPP_
-#define LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_HPP_
+#ifndef MPL_PLANNER__LOCAL_PLANNER_HPP_
+#define MPL_PLANNER__LOCAL_PLANNER_HPP_
 
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <utility> // For std::pair
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 // Constants from the original LocalPlanner class
@@ -101,6 +101,6 @@ inline std::pair<float, float> rotate_point(float x, float y, float angle_deg) {
 
 
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner
 
-#endif // LOCAL_PLANNER_MOTION_PRIMITIVES__LOCAL_PLANNER_HPP_
+#endif // MPL_PLANNER__LOCAL_PLANNER_HPP_

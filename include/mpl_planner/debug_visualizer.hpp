@@ -1,5 +1,5 @@
-#ifndef LOCAL_PLANNER_MOTION_PRIMITIVES__DEBUG_VISUALIZER_HPP_
-#define LOCAL_PLANNER_MOTION_PRIMITIVES__DEBUG_VISUALIZER_HPP_
+#ifndef MPL_PLANNER__DEBUG_VISUALIZER_HPP_
+#define MPL_PLANNER__DEBUG_VISUALIZER_HPP_
 
 #include "rclcpp/rclcpp.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
@@ -8,9 +8,9 @@
 #include "std_msgs/msg/color_rgba.hpp"
 #include "pcl_conversions/pcl_conversions.h"
 
-#include "local_planner_motion_primitives/local_planner.hpp" // For shared types and constants
+#include "mpl_planner/local_planner.hpp" // For shared types and constants
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 class DebugVisualizer
@@ -51,6 +51,6 @@ private:
   const std_msgs::msg::ColorRGBA GREEN = []{ std_msgs::msg::ColorRGBA c; c.r=0.0; c.g=1.0; c.b=0.0; c.a=1.0; return c; }();
 };
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner
 
-#endif // LOCAL_PLANNER_MOTION_PRIMITIVES__DEBUG_VISUALIZER_HPP_
+#endif // MPL_PLANNER__DEBUG_VISUALIZER_HPP_

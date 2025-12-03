@@ -1,5 +1,5 @@
-#ifndef LOCAL_PLANNER_MOTION_PRIMITIVES__PLANNER_CORE_HPP_
-#define LOCAL_PLANNER_MOTION_PRIMITIVES__PLANNER_CORE_HPP_
+#ifndef MPL_PLANNER__PLANNER_CORE_HPP_
+#define MPL_PLANNER__PLANNER_CORE_HPP_
 
 #include <vector>
 #include <cmath>
@@ -9,10 +9,10 @@
 #include "pcl/point_types.h"
 #include "tf2/utils.h"
 
-#include "local_planner_motion_primitives/path_loader.hpp"
-#include "local_planner_motion_primitives/local_planner.hpp" // Contains constants and PathData/PlannerData structs
+#include "mpl_planner/path_loader.hpp"
+#include "mpl_planner/local_planner.hpp" // Contains constants and PathData/PlannerData structs
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 class PlannerCore
@@ -35,6 +35,6 @@ private:
 
 };
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner
 
-#endif // LOCAL_PLANNER_MOTION_PRIMITIVES__PLANNER_CORE_HPP_
+#endif // MPL_PLANNER__PLANNER_CORE_HPP_

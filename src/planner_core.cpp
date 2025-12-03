@@ -1,11 +1,11 @@
-#include "local_planner_motion_primitives/planner_core.hpp"
+#include "mpl_planner/planner_core.hpp"
 
 #include <algorithm>
 #include <vector>
 #include <cmath>
 #include <limits>
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 PlannerCore::PlannerCore(rclcpp::Logger logger,
@@ -85,4 +85,4 @@ void PlannerCore::calculate_path_scores(const pcl::PointCloud<pcl::PointXYZI>::P
   }
 }
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner

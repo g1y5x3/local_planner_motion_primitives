@@ -1,6 +1,6 @@
-#include "local_planner_motion_primitives/debug_visualizer.hpp"
+#include "mpl_planner/debug_visualizer.hpp"
 
-namespace local_planner_motion_primitives
+namespace mpl_planner
 {
 
 DebugVisualizer::DebugVisualizer(rclcpp::Node* node,
@@ -116,4 +116,4 @@ void DebugVisualizer::publish_visualizations(const rclcpp::Time& stamp,
   marker_array_pub_->publish(path_marker_array);
 }
 
-} // namespace local_planner_motion_primitives
+} // namespace mpl_planner

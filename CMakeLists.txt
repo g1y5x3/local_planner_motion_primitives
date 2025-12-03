@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(local_planner_motion_primitives)
+project(mpl_planner)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -22,14 +22,14 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
-add_executable(local_planner
+add_executable(mpl_planner
   src/local_planner.cpp
   src/path_loader.cpp
   src/planner_core.cpp
   src/debug_visualizer.cpp
 )
 
-ament_target_dependencies(local_planner 
+ament_target_dependencies(mpl_planner 
   rclcpp
   sensor_msgs
   nav_msgs
@@ -49,14 +49,14 @@ ament_target_dependencies(pure_pursuit_controller
   geometry_msgs
 )
 
-target_include_directories(local_planner PRIVATE
+target_include_directories(mpl_planner PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
 )
 
 install(TARGETS
-  local_planner
+  mpl_planner
   pure_pursuit_controller
   DESTINATION lib/${PROJECT_NAME}
 )
