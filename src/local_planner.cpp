@@ -1,4 +1,5 @@
 #include "mpl_planner/local_planner_node.hpp"
+#include "tf2/utils.h"
 
 namespace mpl_planner
 {
@@ -73,15 +74,15 @@ void LocalPlanner::lidar_callback(const sensor_msgs::msg::PointCloud2::ConstShar
   std::lock_guard<std::mutex> lock(planner_data_mutex_);
   rclcpp::Time current_stamp = msg->header.stamp;
 
-  // Transform point cloud from /lidar frame to /base_link frame
-  sensor_msgs::msg::PointCloud2::SharedPtr msg_base = std::make_shared<sensor_msgs::msg::PointCloud2>();
-  try {
-    tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
-  } catch (tf2::TransformException &ex) {
-    RCLCPP_WARN(get_logger(), "%s", ex.what());
-    return;
-  }
-  pcl::fromROSMsg(*msg_base, *lidar_cloud_);
+  // // Transform point cloud from /lidar frame to /base_link frame
+  // sensor_msgs::msg::PointCloud2::SharedPtr msg_base = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  // try {
+  //   tf_buffer_->transform(*msg, *msg_base, "base_link", tf2::durationFromSec(0.1));
+  // } catch (tf2::TransformException &ex) {
+  //   RCLCPP_WARN(get_logger(), "%s", ex.what());
+  //   return;
+  // }
+  pcl::fromROSMsg(*msg, *lidar_cloud_);
 
   // Apply distance and height based filtering
   planner_cloud_->clear();
@@ -116,9 +117,18 @@ void LocalPlanner::plan_timer_callback()
   // Calculate the goal distance
   planner_data_.goal_x = p_goal_base_->pose.position.x;
   planner_data_.goal_y = p_goal_base_->pose.position.y;
+  
+  // Extract yaw from goal pose
+  tf2::Quaternion q(
+    p_goal_base_->pose.orientation.x,
+    p_goal_base_->pose.orientation.y,
+    p_goal_base_->pose.orientation.z,
+    p_goal_base_->pose.orientation.w);
+  planner_data_.goal_yaw = tf2::getYaw(q);
+
   const float goal_dist = std::sqrt(std::pow(planner_data_.goal_x, 2) + std::pow(planner_data_.goal_y, 2));
 
-  if (goal_dist < 0.1) {
+  if (goal_dist < 0.25) {
     if (!goal_reached_printed_) {
       RCLCPP_INFO(this->get_logger(), "Goal reached!");
       goal_reached_printed_ = true;
@@ -162,13 +172,17 @@ void LocalPlanner::plan_timer_callback()
   path.header.frame_id = "base_link";
   path_pub_->publish(path);
 
+  // Update previous path for next cycle's smoothing
+  planner_data_.prev_rot_dir = planner_data_.best_rot_dir;
+  planner_data_.prev_group_id = planner_data_.best_group_id;
+
   // Log the best path parameters
   const float goal_angle_log = std::atan2(planner_data_.goal_y, planner_data_.goal_x) * 180 / M_PI;
-  RCLCPP_DEBUG(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %f, Group: %d",
+  RCLCPP_INFO(this->get_logger(), "Goal Distance %.4f, Goal Angle %.4f, Best path - Score: %.4f, Rotation Angle: %f, Group: %d",
               goal_dist, goal_angle_log, planner_data_.best_score, (float)(ANGLE_STEP * planner_data_.best_rot_dir - 90.0f), planner_data_.best_group_id);
 
   // Publish debug visualizations
-  debug_visualizer_->publish_visualizations(current_stamp, planner_cloud_, p_goal_base_);
+  debug_visualizer_->publish_visualizations(current_stamp, planner_cloud_);
 }
 
 } // namespace mpl_planner

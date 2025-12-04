@@ -13,6 +13,13 @@
 namespace mpl_planner
 {
 
+// Helper function to normalize an angle to the range [-PI, PI]
+inline float normalize_angle(float angle) {
+    while (angle > M_PI) angle -= 2.0 * M_PI;
+    while (angle < -M_PI) angle += 2.0 * M_PI;
+    return angle;
+}
+
 PlannerCore::PlannerCore(rclcpp::Logger logger,
                          const VehicleParams& vehicle_params,
                          const PlannerConfig& planner_config,
@@ -44,8 +51,8 @@ void PlannerCore::calculate_path_scores(const pcl::PointCloud<pcl::PointXYZI>::P
         int center_iy = static_cast<int>(std::floor((tf_obs_y - Y_MIN) / VOXEL_SIZE));
 
         // Inflate the obstacle by considering a 3x3 neighborhood
-        for (int dx = -1; dx <= 1; ++dx) {
-          for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
+          for (int dy = -2; dy <= 2; ++dy) {
             int ix = center_ix + dx;
             int iy = center_iy + dy;
 
@@ -61,40 +68,77 @@ void PlannerCore::calculate_path_scores(const pcl::PointCloud<pcl::PointXYZI>::P
 
   const float goal_x = planner_data_.goal_x;
   const float goal_y = planner_data_.goal_y;
+  const float goal_yaw = planner_data_.goal_yaw;
 
   planner_data_.best_score = -1.0f;
 
   for (int rot_dir = 0; rot_dir < NUM_ROTATIONS; ++rot_dir) {
     const float rot_ang_deg = ANGLE_STEP * rot_dir - 90.0f;
+    const float rot_ang_rad = rot_ang_deg * M_PI / 180.0;
     const auto& colliding_paths = colliding_paths_by_rot[rot_dir];
 
     for (int group_id = 0; group_id < NUM_GROUP; ++group_id) {
-      float min_dist_sq_in_group = std::numeric_limits<float>::max();
+      float total_combined_score_in_group = 0.0f;
+      int valid_path_count_in_group = 0;
       bool group_has_valid_path = false;
 
-      for (int path_id : path_data_.group_paths[group_id]) {
+      if (path_data_.group_paths[group_id].empty()) {
+        continue;
+      }
 
-        if (colliding_paths.count(path_id)) {
-          continue; // Path is blocked, try next path in group
+      for (int path_id : path_data_.group_paths[group_id]) {
+        if (path_data_.paths[path_id]->points.size() < 2) { // Need at least 2 points for yaw
+          continue;
         }
 
-        // If we reach here, path is not blocked by obstacle.
-        group_has_valid_path = true;
+        if (colliding_paths.count(path_id)) {
+          continue; // Path is blocked
+        }
 
+        group_has_valid_path = true;
+        valid_path_count_in_group++;
         const auto& path = path_data_.paths[path_id];
+
+        // 1. Distance Score
         const float end_x = path->points.back().x;
         const float end_y = path->points.back().y;
         auto [rot_end_x, rot_end_y] = rotate_point(end_x, end_y, rot_ang_deg);
         const float dist_sq = std::pow(rot_end_x - goal_x, 2) + std::pow(rot_end_y - goal_y, 2);
+        const float dist = std::sqrt(dist_sq);
+        const float k_dist_decay = 0.5f; // Decay parameter for distance score
+        float distance_score = std::exp(-k_dist_decay * dist);
 
-        if (dist_sq < min_dist_sq_in_group) {
-          min_dist_sq_in_group = dist_sq;
-        }
+        // 2. Orientation Score
+        const auto& last_point = path->points.back();
+        const auto& second_last_point = path->points[path->points.size() - 2];
+        float path_end_yaw = std::atan2(last_point.y - second_last_point.y, last_point.x - second_last_point.x);
+        float rotated_path_end_yaw = normalize_angle(path_end_yaw + rot_ang_rad);
+        float yaw_diff = std::abs(normalize_angle(rotated_path_end_yaw - goal_yaw));
+        float orientation_score = 1.0f - (yaw_diff / M_PI);
+
+        // 3. Combine scores
+        const float distance_weight = 0.98f;
+        const float orientation_weight = 0.02f;
+        float combined_score = (distance_weight * distance_score) + (orientation_weight * orientation_score);
+
+        total_combined_score_in_group += combined_score;
       }
 
       float score = 0.0f;
       if (group_has_valid_path) {
-        score = 1.0f / (1.0f + std::sqrt(min_dist_sq_in_group));
+        score = total_combined_score_in_group / valid_path_count_in_group;
+
+        // Add path switching penalty to prefer smoother paths
+        if (planner_data_.prev_rot_dir != -1) {
+          int rot_diff = std::abs(rot_dir - planner_data_.prev_rot_dir);
+          int group_diff = std::abs(group_id - planner_data_.prev_group_id);
+
+          const float rot_penalty_weight = 0.005f;
+          const float group_penalty_weight = 0.0025f;
+
+          score -= (rot_diff * rot_penalty_weight) + (group_diff * group_penalty_weight);
+          if (score < 0.0f) score = 0.0f;
+        }
       }
 
       int score_index = rot_dir * NUM_GROUP + group_id;

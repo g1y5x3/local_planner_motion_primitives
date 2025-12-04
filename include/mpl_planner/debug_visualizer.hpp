@@ -23,8 +23,7 @@ public:
                   const PlannerData& planner_data);
 
   void publish_visualizations(const rclcpp::Time& stamp,
-                              const pcl::PointCloud<pcl::PointXYZI>::Ptr& planner_cloud,
-                              const geometry_msgs::msg::PoseStamped::SharedPtr& p_goal_base);
+                              const pcl::PointCloud<pcl::PointXYZI>::Ptr& planner_cloud);
 
 private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;

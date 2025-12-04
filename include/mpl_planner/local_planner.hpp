@@ -65,22 +65,30 @@ struct PlannerConfig
 };
 
 struct PlannerData {
-    float goal_x;
-    float goal_y;
-    float minObsAngCW;
-    float minObsAngCCW;
+    // Match order in constructor initializer list to avoid -Wreorder warning
     std::vector<int> obstacle_counts;
     std::vector<float> path_score;
+    float goal_x;
+    float goal_y;
+    float goal_yaw;
+    float minObsAngCW;
+    float minObsAngCCW;
     float best_score;
     int best_rot_dir;
     int best_group_id;
+    int prev_rot_dir;
+    int prev_group_id;
 
     PlannerData() :
       obstacle_counts(NUM_ROTATIONS * NUM_GROUP, 0),
-      path_score(NUM_ROTATIONS * NUM_GROUP, 0.0f)
+      path_score(NUM_ROTATIONS * NUM_GROUP, 0.0f),
+      goal_yaw(0.0f),
+      prev_rot_dir(-1),
+      prev_group_id(-1)
     {}
 
     void reset() {
+        goal_yaw = 0.0f;
         minObsAngCW = 0.0f;
         minObsAngCCW = 0.0f;
         std::fill(obstacle_counts.begin(), obstacle_counts.end(), 0);
