@@ -4,6 +4,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/point.hpp"
+#include "rclcpp/qos.hpp"
 
 // This controller assumes the path is published in the robot's base frame (e.g., "base_link").
 class PurePursuitController : public rclcpp::Node
@@ -14,7 +15,7 @@ public:
     {
         // Declare and get parameters
         this->declare_parameter<double>("lookahead_distance", 0.5); // The "carrot" distance
-        this->declare_parameter<double>("linear_velocity", 0.33); // Constant forward velocity
+        this->declare_parameter<double>("linear_velocity", 0.3); // Constant forward velocity
         this->declare_parameter<double>("goal_tolerance", 0.1); // Tolerance to consider the goal reached
         this->declare_parameter<std::string>("robot_frame", "base_link");
 
@@ -31,8 +32,21 @@ public:
         path_sub_ = this->create_subscription<nav_msgs::msg::Path>(
             "/local_path", 10, std::bind(&PurePursuitController::path_callback, this, std::placeholders::_1));
 
-        // Publisher for velocity commands
-        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+        // Publisher for velocity commands with transient local QoS to latch the last command
+        rclcpp::QoS qos_profile(10);
+        qos_profile.transient_local();
+        qos_profile.reliable();
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", qos_profile);
+
+        rclcpp::on_shutdown(std::bind(&PurePursuitController::stop_robot, this));
+    }
+
+    ~PurePursuitController() = default;
+
+    void shutdown()
+    {
+        RCLCPP_INFO(this->get_logger(), "Pure Pursuit Controller shutting down. Stopping the robot.");
+        stop_robot();
     }
 
 private:
@@ -119,10 +133,19 @@ private:
     // Publishes a zero-velocity command to stop the robot.
     void stop_robot()
     {
+        RCLCPP_INFO(this->get_logger(), "Shutdown signal received. Stopping robot...");
+
         auto twist_msg = std::make_unique<geometry_msgs::msg::Twist>();
         twist_msg->linear.x = 0.0;
         twist_msg->angular.z = 0.0;
-        cmd_vel_pub_->publish(std::move(twist_msg));
+
+        // Publish multiple times to ensure the driver receives it
+        // before the transport layer is destroyed.
+        for(int i = 0; i < 5; i++) {
+            // We must create a new message for each publish if we are using unique_ptr/move
+            auto msg_copy = std::make_unique<geometry_msgs::msg::Twist>(*twist_msg);
+            cmd_vel_pub_->publish(std::move(msg_copy));
+        }
     }
 
     // Calculates the Euclidean distance between two points.
@@ -147,8 +170,9 @@ private:
 
 int main(int argc, char * argv[])
 {
-    rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<PurePursuitController>());
+rclcpp::init(argc, argv);
+    auto controller_node = std::make_shared<PurePursuitController>();
+    rclcpp::spin(controller_node);
     rclcpp::shutdown();
     return 0;
 }
