@@ -49,7 +49,25 @@ ament_target_dependencies(pure_pursuit_controller
   geometry_msgs
 )
 
+add_executable(mpl_map_server_node src/map_server.cc)
+ament_target_dependencies(mpl_map_server_node 
+  "rclcpp" 
+  "sensor_msgs" 
+  "pcl_conversions" 
+  "nav_msgs" 
+  "tf2_ros" 
+  "tf2_sensor_msgs"
+  "tf2_geometry_msgs"
+)
+
+
 target_include_directories(mpl_planner PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+)
+
+target_include_directories(mpl_map_server_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
@@ -58,6 +76,7 @@ target_include_directories(mpl_planner PRIVATE
 install(TARGETS
   mpl_planner
   pure_pursuit_controller
+  mpl_map_server_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
