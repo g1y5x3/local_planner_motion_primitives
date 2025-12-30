@@ -17,7 +17,9 @@ LocalPlanner::LocalPlanner()
   this->declare_parameter<double>("distance_threshold", 3.0);  // Max distance for pre-generated paths
 
   // Goal parameters
-  this->declare_parameter<double>("goal_reached_threshold", 0.25);  // Distance to consider goal reached
+  // Default: 2 × sqrt(width × length) per "On Evaluation of Embodied Navigation Agents"
+  // For quadrupeds, geometric mean handles elongated body shape
+  this->declare_parameter<double>("goal_reached_threshold", -1.0);  // -1 = auto-calculate
 
   // Obstacle inflation (in voxels, each voxel is 0.05m)
   this->declare_parameter<int>("obstacle_inflation_radius", 5);
@@ -36,8 +38,14 @@ LocalPlanner::LocalPlanner()
   this->get_parameter("vehicle_length",    vehicle_params_.length);
   this->get_parameter("vehicle_width",     vehicle_params_.width);
   this->get_parameter("distance_threshold", planner_config_.distance_threshold);
-  this->get_parameter("goal_reached_threshold", goal_reached_threshold_);
   this->get_parameter("obstacle_inflation_radius", obstacle_inflation_radius_);
+
+  // Calculate goal threshold: 2 × sqrt(width × length) if not manually set
+  this->get_parameter("goal_reached_threshold", goal_reached_threshold_);
+  if (goal_reached_threshold_ < 0) {
+    goal_reached_threshold_ = 2.0 * std::sqrt(vehicle_params_.width * vehicle_params_.length);
+  }
+  RCLCPP_INFO(this->get_logger(), "Goal reached threshold: %.2f m", goal_reached_threshold_);
 
   RCLCPP_INFO(this->get_logger(), "Vehicle length: %f, Vehicle width: %f", vehicle_params_.length, vehicle_params_.width);
 

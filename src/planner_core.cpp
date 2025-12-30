@@ -122,11 +122,16 @@ void PlannerCore::calculate_path_scores(const pcl::PointCloud<pcl::PointXYZI>::P
       float dist_to_goal = distance_from_origin(goal_x, goal_y);
 
       float w_dist, w_head, w_ori;
-      if (dist_to_goal < 1.0f) {
-        // Close to goal: prioritize final alignment
-        w_dist = 0.40f;
-        w_head = 0.10f;
-        w_ori  = 0.50f;
+      if (dist_to_goal < 0.5f) {
+        // Very close to goal: balance heading and orientation
+        w_dist = 0.30f;
+        w_head = 0.35f;
+        w_ori  = 0.35f;
+      } else if (dist_to_goal < 1.5f) {
+        // Near goal: still prioritize heading to avoid overshooting
+        w_dist = 0.35f;
+        w_head = 0.40f;
+        w_ori  = 0.25f;
       } else {
         // Far from goal: prioritize driving towards it
         w_dist = 0.50f;
