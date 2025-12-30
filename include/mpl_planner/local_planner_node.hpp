@@ -18,7 +18,6 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_sensor_msgs/tf2_sensor_msgs.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "pcl/filters/voxel_grid.h"
 #include "pcl_conversions/pcl_conversions.h"
 
 #include "mpl_planner/local_planner.hpp"
@@ -51,7 +50,6 @@ private:
   // Point clouds
   pcl::PointCloud<pcl::PointXYZI>::Ptr lidar_cloud_;
   pcl::PointCloud<pcl::PointXYZI>::Ptr planner_cloud_;
-  pcl::VoxelGrid<pcl::PointXYZI> lidar_filter_DWZ_;
 
   // Poses
   geometry_msgs::msg::PoseStamped::SharedPtr p_goal_map_;
@@ -69,14 +67,16 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
 
   // Timer and Mutex for threaded planning
-  rclcpp::TimerBase::SharedPtr plan_timer_;
   std::mutex planner_data_mutex_;
   bool goal_reached_printed_ = false;
+
+  // Configurable parameters (extracted from hardcoded values)
+  double goal_reached_threshold_ = 0.25;
+  int obstacle_inflation_radius_ = 5;
 
   // Callbacks
   void goal_pose_callback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg);
   void lidar_callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
-  void plan_timer_callback();
 };
 
 } // namespace mpl_planner

@@ -42,8 +42,8 @@ ament_target_dependencies(mpl_planner
   pcl_conversions
 )
 
-add_executable(pure_pursuit_controller src/pure_pursuit_controller.cpp)
-ament_target_dependencies(pure_pursuit_controller
+add_executable(regulated_pure_pursuit_controller src/regulated_pure_pursuit_controller.cpp)
+ament_target_dependencies(regulated_pure_pursuit_controller
   rclcpp
   nav_msgs
   geometry_msgs
@@ -75,7 +75,7 @@ target_include_directories(mpl_map_server_node PRIVATE
 
 install(TARGETS
   mpl_planner
-  pure_pursuit_controller
+  regulated_pure_pursuit_controller
   mpl_map_server_node
   DESTINATION lib/${PROJECT_NAME}
 )

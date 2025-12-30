@@ -12,16 +12,17 @@
 namespace mpl_planner
 {
 
-// Constants from the original LocalPlanner class
-const int NUM_PATH = 343;
-const int NUM_GROUP = 7;
-const int NUM_ROTATIONS = 19;
-const int ANGLE_STEP = 10;
-const float VOXEL_SIZE = 0.05f;
-const float X_MIN = 0.0f;
-const float X_MAX = 3.0f;
-const float Y_MIN = -3.0f;
-const float Y_MAX = 3.0f;
+// Constants for pre-generated motion primitives
+// Paths are pre-rotated to cover -90° to +90° (no runtime rotation needed)
+// This eliminates abrupt angular velocity commands for quadruped robots
+const int NUM_PATH = 931;           // 19 rotation groups × 49 paths per group
+const int NUM_GROUP = 19;           // Rotation groups from -90° to +90° in 10° steps
+const int ANGLE_STEP = 10;          // 10° between rotation groups
+const float VOXEL_SIZE = 0.05f;     // Voxel size for collision lookup
+const float X_MIN = -3.5f;          // Extended bounds for paths in all directions
+const float X_MAX = 3.5f;
+const float Y_MIN = -3.5f;
+const float Y_MAX = 3.5f;
 
 // A custom hash function for std::pair<int, int> keys in the unordered_map.
 struct VoxelIndexHash {
@@ -65,41 +66,36 @@ struct PlannerConfig
 };
 
 struct PlannerData {
-    // Match order in constructor initializer list to avoid -Wreorder warning
     std::vector<int> obstacle_counts;
     std::vector<float> path_score;
     float goal_x;
     float goal_y;
     float goal_yaw;
-    float minObsAngCW;
-    float minObsAngCCW;
     float best_score;
-    int best_rot_dir;
     int best_group_id;
-    int prev_rot_dir;
     int prev_group_id;
 
     PlannerData() :
-      obstacle_counts(NUM_ROTATIONS * NUM_GROUP, 0),
-      path_score(NUM_ROTATIONS * NUM_GROUP, 0.0f),
+      obstacle_counts(NUM_GROUP, 0),
+      path_score(NUM_GROUP, 0.0f),
       goal_yaw(0.0f),
-      prev_rot_dir(-1),
       prev_group_id(-1)
     {}
 
     void reset() {
         goal_yaw = 0.0f;
-        minObsAngCW = 0.0f;
-        minObsAngCCW = 0.0f;
         std::fill(obstacle_counts.begin(), obstacle_counts.end(), 0);
         std::fill(path_score.begin(), path_score.end(), 0.0f);
         best_score = 0.0f;
-        best_rot_dir = 0;
         best_group_id = 0;
     }
 };
 
-// Helper function to rotate a point
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Rotate a point by angle_deg degrees around the origin
 inline std::pair<float, float> rotate_point(float x, float y, float angle_deg) {
     float angle_rad = angle_deg * M_PI / 180.0;
     float x_rot = std::cos(angle_rad) * x - std::sin(angle_rad) * y;
@@ -107,7 +103,32 @@ inline std::pair<float, float> rotate_point(float x, float y, float angle_deg) {
     return std::make_pair(x_rot, y_rot);
 }
 
+// Calculate 2D Euclidean distance
+inline float distance_2d(float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    return std::sqrt(dx * dx + dy * dy);
+}
 
+// Calculate 2D distance from origin
+inline float distance_from_origin(float x, float y) {
+    return std::sqrt(x * x + y * y);
+}
+
+// Convert quaternion to yaw angle (radians)
+inline float quaternion_to_yaw(float qx, float qy, float qz, float qw) {
+    // yaw = atan2(2*(qw*qz + qx*qy), 1 - 2*(qy*qy + qz*qz))
+    float siny_cosp = 2.0f * (qw * qz + qx * qy);
+    float cosy_cosp = 1.0f - 2.0f * (qy * qy + qz * qz);
+    return std::atan2(siny_cosp, cosy_cosp);
+}
+
+// Normalize angle to [-PI, PI]
+inline float normalize_angle(float angle) {
+    while (angle > M_PI) angle -= 2.0f * M_PI;
+    while (angle < -M_PI) angle += 2.0f * M_PI;
+    return angle;
+}
 
 } // namespace mpl_planner
 
