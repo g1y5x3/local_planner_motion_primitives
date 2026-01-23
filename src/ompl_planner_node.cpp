@@ -88,7 +88,9 @@ void OmplPlanner::mapCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPt
 
   for (const auto& pt : temp_cloud->points) {
       if (pt.intensity > 0.5f) {
-          obstacle_cloud->push_back(pt);
+          pcl::PointXYZI flat_pt = pt;
+          flat_pt.z = 0.0; // FLATTEN TO 2D: Treat all obstacles as infinite pillars
+          obstacle_cloud->push_back(flat_pt);
       }
   }
 
