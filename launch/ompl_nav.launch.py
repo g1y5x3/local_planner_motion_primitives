@@ -41,8 +41,8 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'lookahead_distance': 0.6,
-            'linear_velocity': 0.4,
-            'max_angular_velocity': 0.8,
+            'linear_velocity': 0.5,
+            'max_angular_velocity': 1.0,
             'goal_tolerance': 0.2
         }]
     )

@@ -20,12 +20,12 @@ public:
     {
         // Basic parameters
         this->declare_parameter<double>("lookahead_distance", 0.5);
-        this->declare_parameter<double>("linear_velocity", 0.3);      // Maximum/desired velocity
+        this->declare_parameter<double>("linear_velocity", 0.5);      // Match teleop default
         this->declare_parameter<double>("goal_tolerance", 0.1);
         this->declare_parameter<std::string>("robot_frame", "base_link");
 
         // Regulation parameters for quadruped-friendly motion
-        this->declare_parameter<double>("max_angular_velocity", 0.5);    // rad/s - limit turning speed
+        this->declare_parameter<double>("max_angular_velocity", 1.0);    // Match teleop default
         this->declare_parameter<double>("curvature_threshold", 0.5);     // 1/m - start slowing at this curvature
         this->declare_parameter<double>("min_velocity_ratio", 0.3);      // Minimum velocity as ratio of max
         this->declare_parameter<double>("deceleration_distance", 0.5);   // Start decelerating this far from goal

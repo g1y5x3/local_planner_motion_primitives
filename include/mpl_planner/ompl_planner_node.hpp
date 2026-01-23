@@ -73,7 +73,7 @@ private:
   // Methods
   void mapCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
   void goalCallback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg);
-  void planTimerCallback();
+  void planTimerCallback(double goal_tolerance);
   
   // OMPL Validity Checker
   bool isStateValid(const ompl::base::State *state);
