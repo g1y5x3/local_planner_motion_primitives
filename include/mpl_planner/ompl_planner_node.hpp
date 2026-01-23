@@ -56,9 +56,13 @@ private:
   std::shared_ptr<ompl::base::SpaceInformation> si_;
   std::shared_ptr<ompl::geometric::SimpleSetup> ss_;
 
+#include <deque>
+
+// ...
+
   // State
-  geometry_msgs::msg::PoseStamped current_goal_;
-  bool has_goal_ = false;
+  std::deque<geometry_msgs::msg::PoseStamped> goal_queue_;
+  bool use_goal_queue_ = true; // Default to true for multi-waypoint support
 
   // ROS
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr map_sub_;

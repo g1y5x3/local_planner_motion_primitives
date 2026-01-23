@@ -13,11 +13,13 @@ OmplPlanner::OmplPlanner() : Node("ompl_planner_node")
   this->declare_parameter<double>("planning_time", 0.2);
   this->declare_parameter<double>("planning_bounds", 50.0);
   this->declare_parameter<double>("goal_tolerance", 0.2);
+  this->declare_parameter<bool>("use_goal_queue", true);
 
   robot_radius_ = this->get_parameter("robot_radius").as_double();
   planning_time_ = this->get_parameter("planning_time").as_double();
   planning_bounds_x_ = this->get_parameter("planning_bounds").as_double();
   double goal_tolerance = this->get_parameter("goal_tolerance").as_double();
+  use_goal_queue_ = this->get_parameter("use_goal_queue").as_bool();
   planning_bounds_y_ = planning_bounds_x_;
 
   // Init PCL
@@ -115,10 +117,14 @@ void OmplPlanner::mapCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPt
 
 void OmplPlanner::goalCallback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg)
 {
-  current_goal_ = *msg;
-  has_goal_ = true;
-  RCLCPP_INFO(this->get_logger(), "New Goal Received: (%.2f, %.2f)", 
-      msg->pose.position.x, msg->pose.position.y);
+  if (!use_goal_queue_) {
+      goal_queue_.clear();
+  }
+  
+  goal_queue_.push_back(*msg);
+  
+  RCLCPP_INFO(this->get_logger(), "Goal Received. Queue size: %zu. Next Goal: (%.2f, %.2f)", 
+      goal_queue_.size(), msg->pose.position.x, msg->pose.position.y);
 }
 
 bool OmplPlanner::isStateValid(const ompl::base::State *state)
@@ -146,7 +152,10 @@ bool OmplPlanner::isStateValid(const ompl::base::State *state)
 
 void OmplPlanner::planTimerCallback(double goal_tolerance)
 {
-  if (!has_goal_ || !map_received_) return;
+  if (goal_queue_.empty() || !map_received_) return;
+
+  // Use the first goal in the queue
+  const auto& current_goal = goal_queue_.front();
 
   geometry_msgs::msg::TransformStamped tf_robot;
   try {
@@ -159,17 +168,31 @@ void OmplPlanner::planTimerCallback(double goal_tolerance)
   double start_y = tf_robot.transform.translation.y;
   double start_yaw = tf2::getYaw(tf_robot.transform.rotation);
 
-  double dx = current_goal_.pose.position.x - start_x;
-  double dy = current_goal_.pose.position.y - start_y;
+  double dx = current_goal.pose.position.x - start_x;
+  double dy = current_goal.pose.position.y - start_y;
   double dist = std::sqrt(dx*dx + dy*dy);
 
   if (dist < goal_tolerance) {
-      nav_msgs::msg::Path path_msg;
-      path_msg.header.stamp = this->now();
-      path_msg.header.frame_id = "map";
-      path_pub_->publish(path_msg);
-      return;
+      RCLCPP_INFO(this->get_logger(), "Waypoint reached! (Dist: %.2f)", dist);
+      
+      // Remove the reached goal
+      goal_queue_.pop_front();
+      
+      if (goal_queue_.empty()) {
+          RCLCPP_INFO(this->get_logger(), "Final goal reached. Stopping.");
+          nav_msgs::msg::Path path_msg;
+          path_msg.header.stamp = this->now();
+          path_msg.header.frame_id = "map";
+          path_pub_->publish(path_msg);
+          return;
+      } else {
+          RCLCPP_INFO(this->get_logger(), "Proceeding to next waypoint. Queue size: %zu", goal_queue_.size());
+          // Immediately continue to plan for the next goal in this same cycle
+      }
   }
+  
+  // Re-fetch current goal in case we just popped one
+  const auto& target_goal = goal_queue_.front();
 
   ompl::base::ScopedState<ompl::base::SE2StateSpace> start(space_);
   start->setX(start_x);
@@ -177,9 +200,9 @@ void OmplPlanner::planTimerCallback(double goal_tolerance)
   start->setYaw(start_yaw);
 
   ompl::base::ScopedState<ompl::base::SE2StateSpace> goal(space_);
-  goal->setX(current_goal_.pose.position.x);
-  goal->setY(current_goal_.pose.position.y);
-  goal->setYaw(tf2::getYaw(current_goal_.pose.orientation));
+  goal->setX(target_goal.pose.position.x);
+  goal->setY(target_goal.pose.position.y);
+  goal->setYaw(tf2::getYaw(target_goal.pose.orientation));
 
   ss_->clear(); 
   ss_->setStartAndGoalStates(start, goal);
