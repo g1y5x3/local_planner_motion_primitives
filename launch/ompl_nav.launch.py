@@ -27,8 +27,9 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'robot_radius': LaunchConfiguration('robot_radius'),
-            'planning_time': 0.2,
-            'planning_bounds': 100.0
+            'planning_time': 0.5,
+            'planning_bounds': 100.0,
+            'goal_tolerance': 0.5
         }]
     )
 
