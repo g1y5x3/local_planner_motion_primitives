@@ -5,6 +5,9 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "rclcpp/qos.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 // Regulated Pure Pursuit Controller for quadruped robots
 // Features velocity regulation based on curvature, goal proximity, and tracking error
@@ -37,6 +40,10 @@ public:
         this->get_parameter("min_velocity_ratio", min_velocity_ratio_);
         this->get_parameter("deceleration_distance", deceleration_distance_);
         this->get_parameter("use_velocity_regulation", use_velocity_regulation_);
+
+        // TF
+        tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         RCLCPP_INFO(this->get_logger(), "Regulated Pure Pursuit Controller started");
         RCLCPP_INFO(this->get_logger(), "  Lookahead: %.2f m, Max velocity: %.2f m/s",
@@ -78,17 +85,33 @@ private:
             return;
         }
 
-        // Verify the path is in the expected robot frame.
+        // Transform path to robot frame if necessary
+        nav_msgs::msg::Path local_path;
         if (msg->header.frame_id != robot_frame_)
         {
-            RCLCPP_ERROR(this->get_logger(), "Path received in frame '%s' but expected in frame '%s'. Ignoring path.",
-                         msg->header.frame_id.c_str(), robot_frame_.c_str());
-            return;
+            try {
+                // We transform each pose individually to ensure high accuracy
+                geometry_msgs::msg::TransformStamped tf = tf_buffer_->lookupTransform(
+                    robot_frame_, msg->header.frame_id, rclcpp::Time(0));
+                
+                local_path.header.frame_id = robot_frame_;
+                local_path.header.stamp = msg->header.stamp;
+                for (const auto& global_pose : msg->poses) {
+                    geometry_msgs::msg::PoseStamped local_pose;
+                    tf2::doTransform(global_pose, local_pose, tf);
+                    local_path.poses.push_back(local_pose);
+                }
+            } catch (tf2::TransformException &ex) {
+                RCLCPP_WARN(this->get_logger(), "Could not transform path: %s", ex.what());
+                return;
+            }
+        } else {
+            local_path = *msg;
         }
 
         // Find the lookahead point directly in the robot's frame.
         geometry_msgs::msg::Point lookahead_point;
-        bool found_point = find_lookahead_point(*msg, lookahead_point);
+        bool found_point = find_lookahead_point(local_path, lookahead_point);
 
         if (!found_point)
         {
@@ -235,6 +258,9 @@ private:
     // ROS 2 Interfaces
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+    
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     // Basic parameters
     double lookahead_distance_;
