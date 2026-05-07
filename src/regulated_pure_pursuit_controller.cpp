@@ -1,5 +1,7 @@
 #include <cmath>
 #include <algorithm>
+#include <chrono>
+#include <mutex>
 #include "rclcpp/rclcpp.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -23,6 +25,8 @@ public:
         this->declare_parameter<double>("linear_velocity", 0.5);      // Match teleop default
         this->declare_parameter<double>("goal_tolerance", 0.1);
         this->declare_parameter<std::string>("robot_frame", "base_link");
+        this->declare_parameter<double>("control_frequency", 10.0);
+        this->declare_parameter<double>("path_timeout", 2.0);
 
         // Regulation parameters for quadruped-friendly motion
         this->declare_parameter<double>("max_angular_velocity", 1.0);    // Match teleop default
@@ -35,6 +39,8 @@ public:
         this->get_parameter("linear_velocity", max_linear_velocity_);
         this->get_parameter("robot_frame", robot_frame_);
         this->get_parameter("goal_tolerance", goal_tolerance_);
+        this->get_parameter("control_frequency", control_frequency_);
+        this->get_parameter("path_timeout", path_timeout_);
         this->get_parameter("max_angular_velocity", max_angular_velocity_);
         this->get_parameter("curvature_threshold", curvature_threshold_);
         this->get_parameter("min_velocity_ratio", min_velocity_ratio_);
@@ -48,6 +54,8 @@ public:
         RCLCPP_INFO(this->get_logger(), "Regulated Pure Pursuit Controller started");
         RCLCPP_INFO(this->get_logger(), "  Lookahead: %.2f m, Max velocity: %.2f m/s",
                     lookahead_distance_, max_linear_velocity_);
+        RCLCPP_INFO(this->get_logger(), "  Control frequency: %.2f Hz, Path timeout: %.2f s",
+                    control_frequency_, path_timeout_);
         RCLCPP_INFO(this->get_logger(), "  Velocity regulation: %s",
                     use_velocity_regulation_ ? "ENABLED" : "DISABLED");
         RCLCPP_INFO(this->get_logger(), "  Expecting path in frame: '%s'", robot_frame_.c_str());
@@ -56,11 +64,16 @@ public:
         path_sub_ = this->create_subscription<nav_msgs::msg::Path>(
             "/local_path", 10, std::bind(&RegulatedPurePursuitController::path_callback, this, std::placeholders::_1));
 
-        // Publisher for velocity commands with transient local QoS to latch the last command
+        // Publisher for velocity commands. Velocity commands should not be latched.
         rclcpp::QoS qos_profile(10);
-        qos_profile.transient_local();
+        qos_profile.durability_volatile();
         qos_profile.reliable();
         cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", qos_profile);
+
+        const double safe_control_frequency = std::max(control_frequency_, 1.0);
+        control_timer_ = this->create_wall_timer(
+            std::chrono::duration<double>(1.0 / safe_control_frequency),
+            std::bind(&RegulatedPurePursuitController::control_timer_callback, this));
 
         rclcpp::on_shutdown(std::bind(&RegulatedPurePursuitController::stop_robot, this));
     }
@@ -77,26 +90,60 @@ private:
     // Main callback that processes the path and computes control commands
     void path_callback(const nav_msgs::msg::Path::SharedPtr msg)
     {
+        std::lock_guard<std::mutex> lock(path_mutex_);
+        latest_path_ = *msg;
+        latest_path_time_ = this->now();
+        has_path_ = true;
+    }
+
+    void control_timer_callback()
+    {
+        nav_msgs::msg::Path path;
+        rclcpp::Time path_time;
+
+        {
+            std::lock_guard<std::mutex> lock(path_mutex_);
+            if (!has_path_) {
+                return;
+            }
+            path = latest_path_;
+            path_time = latest_path_time_;
+        }
+
+        const double age = (this->now() - path_time).seconds();
+        if (age > path_timeout_) {
+            RCLCPP_WARN_THROTTLE(
+                this->get_logger(), *this->get_clock(), 2000,
+                "Latest path is stale (%.2f s old). Stopping robot.", age);
+            publish_stop_command();
+            return;
+        }
+
+        process_path(path);
+    }
+
+    void process_path(const nav_msgs::msg::Path& msg)
+    {
         // Check if the path is empty, and stop the robot if so.
-        if (msg->poses.empty())
+        if (msg.poses.empty())
         {
             RCLCPP_DEBUG(this->get_logger(), "Received an empty path. Stopping the robot.");
-            stop_robot();
+            publish_stop_command();
             return;
         }
 
         // Transform path to robot frame if necessary
         nav_msgs::msg::Path local_path;
-        if (msg->header.frame_id != robot_frame_)
+        if (msg.header.frame_id != robot_frame_)
         {
             try {
                 // We transform each pose individually to ensure high accuracy
                 geometry_msgs::msg::TransformStamped tf = tf_buffer_->lookupTransform(
-                    robot_frame_, msg->header.frame_id, rclcpp::Time(0));
+                    robot_frame_, msg.header.frame_id, rclcpp::Time(0));
                 
                 local_path.header.frame_id = robot_frame_;
-                local_path.header.stamp = msg->header.stamp;
-                for (const auto& global_pose : msg->poses) {
+                local_path.header.stamp = msg.header.stamp;
+                for (const auto& global_pose : msg.poses) {
                     geometry_msgs::msg::PoseStamped local_pose;
                     tf2::doTransform(global_pose, local_pose, tf);
                     local_path.poses.push_back(local_pose);
@@ -106,7 +153,7 @@ private:
                 return;
             }
         } else {
-            local_path = *msg;
+            local_path = msg;
         }
 
         // Find the lookahead point directly in the robot's frame.
@@ -116,7 +163,7 @@ private:
         if (!found_point)
         {
             RCLCPP_WARN(this->get_logger(), "Could not find a valid lookahead point on the path. Stopping robot.");
-            stop_robot();
+            publish_stop_command();
             return;
         }
 
@@ -145,7 +192,7 @@ private:
             //    This ensures smooth stopping without overshooting
             geometry_msgs::msg::Point robot_pos;
             robot_pos.x = 0; robot_pos.y = 0; robot_pos.z = 0;
-            geometry_msgs::msg::Point goal = msg->poses.back().pose.position;
+            geometry_msgs::msg::Point goal = local_path.poses.back().pose.position;
             double dist_to_goal = distance(robot_pos, goal);
 
             if (dist_to_goal < deceleration_distance_) {
@@ -234,17 +281,17 @@ private:
     // Publishes a zero-velocity command to stop the robot.
     void stop_robot()
     {
+        for(int i = 0; i < 5; i++) {
+            publish_stop_command();
+        }
+    }
+
+    void publish_stop_command()
+    {
         auto twist_msg = std::make_unique<geometry_msgs::msg::Twist>();
         twist_msg->linear.x = 0.0;
         twist_msg->angular.z = 0.0;
-
-        // Publish multiple times to ensure the driver receives it
-        // before the transport layer is destroyed.
-        for(int i = 0; i < 5; i++) {
-            // We must create a new message for each publish if we are using unique_ptr/move
-            auto msg_copy = std::make_unique<geometry_msgs::msg::Twist>(*twist_msg);
-            cmd_vel_pub_->publish(std::move(msg_copy));
-        }
+        cmd_vel_pub_->publish(std::move(twist_msg));
     }
 
     // Calculates the Euclidean distance between two points.
@@ -258,15 +305,22 @@ private:
     // ROS 2 Interfaces
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+    rclcpp::TimerBase::SharedPtr control_timer_;
     
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    std::mutex path_mutex_;
+    nav_msgs::msg::Path latest_path_;
+    rclcpp::Time latest_path_time_;
+    bool has_path_ = false;
 
     // Basic parameters
     double lookahead_distance_;
     double max_linear_velocity_;
     double goal_tolerance_;
     std::string robot_frame_;
+    double control_frequency_;
+    double path_timeout_;
 
     // Velocity regulation parameters (for quadruped-friendly motion)
     double max_angular_velocity_;
