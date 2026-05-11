@@ -34,6 +34,7 @@ public:
         this->declare_parameter<double>("min_velocity_ratio", 0.3);      // Minimum velocity as ratio of max
         this->declare_parameter<double>("deceleration_distance", 0.5);   // Start decelerating this far from goal
         this->declare_parameter<bool>("use_velocity_regulation", true);  // Enable/disable regulation
+        this->declare_parameter<double>("heading_turn_gain", 0.6);       // rad/s per rad heading error
 
         this->get_parameter("lookahead_distance", lookahead_distance_);
         this->get_parameter("linear_velocity", max_linear_velocity_);
@@ -46,6 +47,7 @@ public:
         this->get_parameter("min_velocity_ratio", min_velocity_ratio_);
         this->get_parameter("deceleration_distance", deceleration_distance_);
         this->get_parameter("use_velocity_regulation", use_velocity_regulation_);
+        this->get_parameter("heading_turn_gain", heading_turn_gain_);
 
         // TF
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -58,6 +60,7 @@ public:
                     control_frequency_, path_timeout_);
         RCLCPP_INFO(this->get_logger(), "  Velocity regulation: %s",
                     use_velocity_regulation_ ? "ENABLED" : "DISABLED");
+        RCLCPP_INFO(this->get_logger(), "  Heading turn gain: %.2f", heading_turn_gain_);
         RCLCPP_INFO(this->get_logger(), "  Expecting path in frame: '%s'", robot_frame_.c_str());
 
         // Subscriber to the path topic
@@ -172,6 +175,13 @@ private:
         double x = lookahead_point.x;
         double y = lookahead_point.y;
         double ld_squared = x*x + y*y;
+        if (ld_squared < 1e-6) {
+            publish_stop_command();
+            return;
+        }
+
+        const double heading_error = std::atan2(y, x);
+
         double curvature = 2.0 * y / ld_squared;
 
         // ====================================================================
@@ -213,10 +223,13 @@ private:
             }
         }
 
-        // Calculate angular velocity with the regulated linear velocity
-        double angular_velocity = regulated_velocity * curvature;
+        const double heading_speed_scale = std::clamp(std::cos(heading_error), 0.0, 1.0);
+        regulated_velocity *= heading_speed_scale;
+        if (x <= 0.0) {
+            regulated_velocity = 0.0;
+        }
 
-        // Clamp angular velocity for stability
+        double angular_velocity = heading_turn_gain_ * heading_error;
         angular_velocity = std::clamp(angular_velocity,
                                        -max_angular_velocity_,
                                        max_angular_velocity_);
@@ -328,6 +341,7 @@ private:
     double min_velocity_ratio_;
     double deceleration_distance_;
     bool use_velocity_regulation_;
+    double heading_turn_gain_;
 };
 
 int main(int argc, char * argv[])
