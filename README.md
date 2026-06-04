@@ -1,8 +1,7 @@
-# Local motion planner using motion primitives and grid search
+# Path Follower
 
-## Obstacle avoidance
-1. Pre-generate a fix set of paths starting from the base of the robot using a spline function with different parameters.
+ROS 2 package containing the regulated pure pursuit controller used to follow
+`nav_msgs/Path` messages and publish `/cmd_vel`.
 
-<img src="assets/paths.png" height="500" width="500">
-
-2. 
+The package intentionally contains controller code only. Mission-level planning
+is handled by FAR Planner.
